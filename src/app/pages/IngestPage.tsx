@@ -8,8 +8,6 @@ import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Badge } from "../components/ui/badge";
-import { Label } from "../components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../components/ui/tabs";
 import {
   Upload, FileText, Hash, Search, Globe, Loader2, ExternalLink, Ban, X, ChevronDown, ChevronRight, FileQuestion,
@@ -79,9 +77,9 @@ export function IngestPage() {
           </TabsContent>
 
           <TabsContent value="doi">
-            <DoiTab busy={busy} onRun={async (doi, src) => {
+            <DoiTab busy={busy} onRun={async (doi) => {
               const ac = start("doi");
-              try { const r = await IngestService.fetch({ doi, ...src }, ac.signal); s.setPaperUnderAudit(r.paper); if (!r.resolved) setError("DOI did not resolve to a known record — check it."); }
+              try { const r = await IngestService.fetch({ doi, useOpenAccess: false, useBrowserbase: true }, ac.signal); s.setPaperUnderAudit(r.paper); if (!r.resolved) setError("DOI did not resolve to a known record — check it."); }
               catch (e: any) { if (e?.name !== "AbortError") setError(e?.message || "Fetch failed."); }
               finally { done(); }
             }} />
@@ -89,9 +87,9 @@ export function IngestPage() {
 
           <TabsContent value="search">
             <SearchTab busy={busy} setBusy={setBusy} setError={setError}
-              onPick={async (c, src) => {
+              onPick={async (c) => {
                 const ac = start("doi");
-                try { const r = await IngestService.fetch({ doi: c.doi, title: c.title, ...src }, ac.signal); s.setPaperUnderAudit(r.paper); }
+                try { const r = await IngestService.fetch({ doi: c.doi, title: c.title, useOpenAccess: false, useBrowserbase: true }, ac.signal); s.setPaperUnderAudit(r.paper); }
                 catch (e: any) { if (e?.name !== "AbortError") setError(e?.message || "Fetch failed."); }
                 finally { done(); }
               }} />
@@ -144,18 +142,14 @@ function UploadTab({ busy, onRun }: { busy: string | null; onRun: (f: File) => v
   );
 }
 
-function DoiTab({ busy, onRun }: { busy: string | null; onRun: (doi: string, src: FetchSrc) => void }) {
+function DoiTab({ busy, onRun }: { busy: string | null; onRun: (doi: string) => void }) {
   const [doi, setDoi] = useState("");
-  const [src, setSrc] = useState<SourceChoice>("auto");
-  const run = () => doi.trim() && onRun(doi.trim(), SRC[src]);
+  const run = () => doi.trim() && onRun(doi.trim());
   return (
-    <div className="space-y-3">
-      <div className="flex gap-2">
-        <Input placeholder="10.1038/s41586-020-2649-2" value={doi} onChange={(e) => setDoi(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && run()} disabled={!!busy} />
-        <Button onClick={run} disabled={!!busy || !doi.trim()}>Fetch</Button>
-      </div>
-      <FullTextSourceSelect value={src} onChange={setSrc} />
+    <div className="flex gap-2">
+      <Input placeholder="10.1038/s41586-020-2649-2" value={doi} onChange={(e) => setDoi(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && run()} disabled={!!busy} />
+      <Button onClick={run} disabled={!!busy || !doi.trim()}>Fetch</Button>
     </div>
   );
 }
@@ -170,18 +164,16 @@ function UrlTab({ busy, onRun }: { busy: string | null; onRun: (url: string) => 
           onKeyDown={(e) => e.key === "Enter" && url.trim() && onRun(url.trim())} disabled={!!busy} />
         <Button onClick={() => onRun(url.trim())} disabled={!!busy || !url.trim()}>Fetch</Button>
       </div>
-      <p className="text-xs text-muted-foreground">Loaded in a real cloud browser (Browserbase) — works on JS-rendered and paywalled landing pages, and downloads the linked PDF when available.</p>
     </div>
   );
 }
 
 function SearchTab({ busy, setBusy, setError, onPick }: {
   busy: string | null; setBusy: (v: string | null) => void; setError: (v: string | null) => void;
-  onPick: (c: IngestCandidate, src: FetchSrc) => void;
+  onPick: (c: IngestCandidate) => void;
 }) {
   const [q, setQ] = useState("");
   const [cands, setCands] = useState<IngestCandidate[] | null>(null);
-  const [src, setSrc] = useState<SourceChoice>("auto");
 
   async function search() {
     if (!q.trim()) return;
@@ -198,13 +190,12 @@ function SearchTab({ busy, setBusy, setError, onPick }: {
           onKeyDown={(e) => e.key === "Enter" && search()} disabled={!!busy} />
         <Button onClick={search} disabled={!!busy || !q.trim()}><Search className="size-4 mr-1.5" />Search</Button>
       </div>
-      <FullTextSourceSelect value={src} onChange={setSrc} />
-      {busy === "search" && <p className="text-sm text-muted-foreground flex items-center gap-2"><Loader2 className="size-4 animate-spin" />Searching Crossref…</p>}
+      {busy === "search" && <p className="text-sm text-muted-foreground flex items-center gap-2"><Loader2 className="size-4 animate-spin" />Searching…</p>}
       {cands && cands.length === 0 && <p className="text-sm text-muted-foreground">No matches.</p>}
       {cands && cands.length > 0 && (
         <div className="space-y-1.5">
           {cands.map((c, i) => (
-            <button key={i} onClick={() => onPick(c, SRC[src])} disabled={!!busy}
+            <button key={i} onClick={() => onPick(c)} disabled={!!busy}
               className="w-full text-left p-3 rounded-md border hover:bg-muted transition-colors disabled:opacity-50">
               <div className="text-sm font-medium">{c.title}</div>
               <div className="text-xs text-muted-foreground">
@@ -215,39 +206,6 @@ function SearchTab({ busy, setBusy, setError, onPick }: {
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-// Selectable full-text retrieval strategy, mapped to backend flags.
-type FetchSrc = { useOpenAccess: boolean; useBrowserbase: boolean };
-type SourceChoice = "auto" | "oa" | "browserbase";
-const SRC: Record<SourceChoice, FetchSrc> = {
-  auto: { useOpenAccess: true, useBrowserbase: true },
-  oa: { useOpenAccess: true, useBrowserbase: false },
-  browserbase: { useOpenAccess: false, useBrowserbase: true },
-};
-const SRC_HINT: Record<SourceChoice, string> = {
-  auto: "Open-access APIs first, then Browserbase if needed.",
-  oa: "Europe PMC · PMC · Unpaywall · arXiv only (clean structured text).",
-  browserbase: "Headless cloud browser only (any URL, incl. paywalled landing pages).",
-};
-
-function FullTextSourceSelect({ value, onChange }: { value: SourceChoice; onChange: (v: SourceChoice) => void }) {
-  return (
-    <div className="space-y-1">
-      <div className="flex items-center gap-2">
-        <Label className="text-xs text-muted-foreground">Full-text source</Label>
-        <Select value={value} onValueChange={(v) => onChange(v as SourceChoice)}>
-          <SelectTrigger className="h-8 w-[230px] text-xs"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="auto">Auto (open-access → Browserbase)</SelectItem>
-            <SelectItem value="oa">Open-access databases</SelectItem>
-            <SelectItem value="browserbase">Browserbase</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      <p className="text-[11px] text-muted-foreground">{SRC_HINT[value]}</p>
     </div>
   );
 }
