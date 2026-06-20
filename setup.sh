@@ -266,7 +266,7 @@ if [ "$START_SERVICES" = 1 ]; then
         cd "$REPO_ROOT/Backend"
         # shellcheck source=/dev/null
         source .venv/bin/activate
-        nohup uvicorn api:app --host 0.0.0.0 --port "$BACKEND_PORT" \
+        nohup uvicorn audata.main:app --host 0.0.0.0 --port "$BACKEND_PORT" \
           >"$REPO_ROOT/.runtime/backend.log" 2>&1 &
         echo $! > "$REPO_ROOT/.runtime/backend.pid"
       )

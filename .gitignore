@@ -68,3 +68,7 @@ tripod_llm_checklist*
 REPRODUCIBILITY.md
 submission_*/
 ~$*
+
+# AuData long-term SQLite store
+*.db
+Backend/audata.db

@@ -62,9 +62,9 @@ what's left to build). We build them one at a time.
 ## Stack
 
 - **Frontend**: React + TypeScript + Vite, shadcn/Radix + Tailwind, REST + SSE.
-- **Backend**: FastAPI/Python, provider-agnostic LLM dispatcher, AI + data services.
+- **Backend**: a standalone AuData FastAPI service (`Backend/audata/`), separate from the legacy Evidence Engine app (`Backend/api.py`).
 - **LLM serving**: Ollama local models + cloud (Claude/GPT/Gemini) for reasoning-heavy steps.
-- **Data**: Supabase (Postgres KV) for sessions/auth/storage; biomedical literature APIs.
+- **Storage**: Redis for short-term session storage/cache (set `REDIS_URL`; falls back to in-memory if unset), SQLite for long-term persistence (`Backend/audata.db`) — both separate from Evidence Engine's Supabase. Browserbase for web fetch; biomedical literature APIs (Crossref/OpenAlex/Unpaywall/…).
 
 ## Quick start
 
@@ -94,11 +94,16 @@ pnpm dev          # Vite dev server (http://localhost:5173 → proxies /api to :
 pnpm typecheck
 pnpm build
 
-# Backend (in its venv)
+# Backend — the AuData service (in its venv)
 cd Backend && python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-uvicorn api:app --port 8010
+uvicorn audata.main:app --port 8010
 ```
 
-Copy `Backend/.env.example` → `Backend/.env` and fill API keys (Anthropic/OpenAI/
-Gemini, Entrez email, optional Semantic Scholar / CORE / Elsevier).
+Copy `Backend/.env.example` → `Backend/.env` and fill what you need: `ENTREZ_EMAIL`
+(polite pool for Crossref/OpenAlex/Unpaywall), `BROWSERBASE_API_KEY` /
+`BROWSERBASE_PROJECT_ID` (URL fetch), `REDIS_URL` (short-term storage; optional —
+falls back to in-memory), and a model key (`ANTHROPIC_API_KEY` / …) for AI steps.
+
+The legacy Evidence Engine FastAPI app still lives at `Backend/api.py` for
+reference but is **not** started by AuData.

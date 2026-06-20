@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState, ReactNode } from "react";
 import { Pico, Analysis, ScreenResult, FullTextResult, Paper, QualityReport, QualityOverride } from "./mockServices";
-import { apiConfig, RerankResult, StudyEffect, MetaRunResult, EffectMeasure, Tau2Method } from "./apiClient";
+import { apiConfig, RerankResult, StudyEffect, MetaRunResult, EffectMeasure, Tau2Method, PaperUnderAudit } from "./apiClient";
 
 // AuData audit pipeline: Manage (dashboard, audits) → Ingest → Detect
 // (recompute, numerical, imaging, methods, references) → Reliability
@@ -137,6 +137,9 @@ type Ctx = {
   simulationRuns: SimulationRun[];
   addSimulationRun: (run: Omit<SimulationRun, "id" | "timestamp" | "label">) => void;
   clearSimulationRuns: () => void;
+
+  // Ingest — the paper under audit (AuData)
+  paperUnderAudit: PaperUnderAudit | null; setPaperUnderAudit: (v: PaperUnderAudit | null) => void;
 
   // Quality Assessment
   rawPapers: Paper[] | null; setRawPapers: (v: Paper[] | null) => void;
@@ -321,6 +324,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   };
   const clearSimulationRuns = () => setSimulationRuns([]);
 
+  const [paperUnderAudit, setPaperUnderAudit] = useState<PaperUnderAudit | null>(null);
   const [rawPapers, setRawPapers] = useState<Paper[] | null>(null);
   const [uniquePapers, setUniquePapers] = useState<Paper[] | null>(null);
   const [duplicatesCount, setDuplicatesCount] = useState(0);
@@ -475,6 +479,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const snapshot = () => ({
     history, pico, inclusion, exclusion, query, unifiedSearchQuery, perDbQueries,
     sources, numPerSource, model,
+    paperUnderAudit,
     rawPapers, uniquePapers, duplicatesCount, qualityReports,
     excludedByQuality: Array.from(excludedByQuality),
     qualityOverrides,
@@ -503,6 +508,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (Array.isArray(d.sources)) setSources(d.sources);
     if (typeof d.numPerSource === "number") setNumPerSource(d.numPerSource);
     if (d.model) setModel(d.model);
+    setPaperUnderAudit(d.paperUnderAudit ?? null);
     setRawPapers(d.rawPapers ?? null);
     setUniquePapers(d.uniquePapers ?? null);
     setDuplicatesCount(d.duplicatesCount ?? 0);
@@ -589,6 +595,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setHistory([]); setPico({ population: "", intervention: "", comparator: "", outcome: "" });
     setInclusion([]); setExclusion([]); setQuery(""); setUnifiedSearchQuery(""); setPerDbQueries({});
     setSimulation(null); setDbTestResults(null); setAgenticTrace(null); setAgenticSummary(null);
+    setPaperUnderAudit(null);
     setRawPapers(null); setUniquePapers(null); setDuplicatesCount(0);
     setQualityReports(null); setExcludedByQuality(new Set()); setQualityOverrides([]);
     setAbstractOverrides({}); setFullTextOverrides({});
@@ -612,6 +619,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     unifiedSearchQuery, setUnifiedSearchQuery, perDbQueries, setPerDbQueries, simulation, setSimulation,
     dbTestResults, setDbTestResults, agenticTrace, setAgenticTrace, agenticSummary, setAgenticSummary,
     simulationRuns, addSimulationRun, clearSimulationRuns,
+    paperUnderAudit, setPaperUnderAudit,
     rawPapers, setRawPapers, uniquePapers, setUniquePapers, duplicatesCount, setDuplicatesCount,
     qualityReports, setQualityReports, excludedByQuality, setExcludedByQuality,
     qualityOverrides, setQualityOverrides, addQualityOverride, clearQualityOverrides,

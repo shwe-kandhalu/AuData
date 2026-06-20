@@ -903,3 +903,92 @@ export function formatDuration(seconds: number): string {
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${Math.floor(seconds % 60)}s`;
   return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
 }
+
+// ---------------------------------------------------------------------------
+// Ingest — the paper under audit
+// ---------------------------------------------------------------------------
+
+export type PaperSection = { title: string; char_count: number; preview: string };
+
+export type PaperUnderAudit = {
+  id: string;
+  source: string;            // "pdf_upload" | "doi" | "url" | "search"
+  title: string;
+  authors: string;
+  year: number | null;
+  doi: string;
+  container: string;
+  url: string;
+  abstract: string;
+  full_text: string;
+  full_text_source: string;
+  has_full_text: boolean;
+  num_pages: number | null;
+  char_count: number;
+  sections: PaperSection[];
+  tables_detected: number;
+  table_numbers: number[];
+  figures_detected: number;
+  references_detected: number;
+  retracted: boolean;
+  providers: string[];
+};
+
+export type IngestCandidate = {
+  title: string; doi: string; year: number | null; authors: string;
+  container: string; type: string; abstract_present: boolean;
+};
+
+// Stable per-browser id so the server can cache the paper under audit in Redis
+// (short-term session storage), separate from EE.
+export function clientSessionId(): string {
+  try {
+    let id = localStorage.getItem("audata:clientId");
+    if (!id) { id = (crypto as any)?.randomUUID?.() || `c-${Date.now()}`; localStorage.setItem("audata:clientId", id); }
+    return id;
+  } catch { return "anon"; }
+}
+
+export const IngestService = {
+  async search(query: string, rows = 6, signal?: AbortSignal): Promise<IngestCandidate[]> {
+    const r = await postJSON<{ candidates: IngestCandidate[] }>("/ingest/search", { query, rows }, signal);
+    return r.candidates || [];
+  },
+
+  async fetch(
+    opts: { doi?: string; title?: string; url?: string; useBrowserbase?: boolean },
+    signal?: AbortSignal,
+  ): Promise<{ paper: PaperUnderAudit; resolved: boolean; browserbase?: any }> {
+    return postJSON("/ingest/fetch", {
+      doi: opts.doi || "", title: opts.title || "", url: opts.url || "",
+      use_browserbase: opts.useBrowserbase !== false, session_id: clientSessionId(),
+    }, signal);
+  },
+
+  async fetchUrl(url: string, signal?: AbortSignal): Promise<{ paper: PaperUnderAudit; browserbase?: any }> {
+    return postJSON("/ingest/url", { url, session_id: clientSessionId() }, signal);
+  },
+
+  async uploadPdf(file: File, signal?: AbortSignal): Promise<{ paper: PaperUnderAudit }> {
+    const fd = new FormData();
+    fd.append("file", file);
+    const res = await fetch(`${apiConfig.baseUrl}/ingest/pdf`, {
+      method: "POST", body: fd, signal, headers: { "X-Session-Id": clientSessionId() },
+    });
+    const text = await res.text();
+    let json: any = null;
+    try { json = text ? JSON.parse(text) : null; } catch { /* non-json */ }
+    if (!res.ok) throw new Error(json?.detail || text || `Upload failed (${res.status})`);
+    return json as { paper: PaperUnderAudit };
+  },
+
+  // Restore the paper under audit cached in Redis for this browser's session.
+  async restoreSession(signal?: AbortSignal): Promise<PaperUnderAudit | null> {
+    try {
+      const r = await fetch(`${apiConfig.baseUrl}/session/${encodeURIComponent(clientSessionId())}/paper`, { signal });
+      if (!r.ok) return null;
+      const j = await r.json();
+      return j?.paper ?? null;
+    } catch { return null; }
+  },
+};

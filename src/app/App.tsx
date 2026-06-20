@@ -5,9 +5,10 @@ import { StoreProvider, useStore } from "./lib/store";
 import { AuthProvider } from "./lib/auth";
 import { UserMenu } from "./components/UserMenu";
 import {
-  DashboardPage, AuditsPage, IngestPage, RecomputePage, NumericalPage,
+  DashboardPage, AuditsPage, RecomputePage, NumericalPage,
   ImagingPage, MethodsPage, ReferencesPage, ReliabilityPage, ReviewPage, ReportPage,
 } from "./pages/AuditPlaceholders";
+import { IngestPage } from "./pages/IngestPage";
 import { LayoutDashboard, Upload, Calculator, Hash, Image as ImageIcon, GitCompare, BookMarked, Gauge, ShieldCheck, FileText, Users } from "lucide-react";
 
 const PAGE_META: Record<string, { title: string; subtitle: string; icon: any }> = {

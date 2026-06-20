@@ -1,0 +1,149 @@
+"""AuData storage layer.
+
+Two tiers, both separate from Evidence Engine's Supabase:
+  • Redis  — short-term session state / cache (current paper under audit, etc.),
+             with a TTL. Falls back to an in-process dict if Redis is unreachable
+             so the app still runs.
+  • SQLite — long-term persistence (ingested papers, sessions, and a flags table
+             for the detection agents). A single file, behind small functions so
+             it can be swapped for Postgres later without touching callers.
+"""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+import threading
+import time
+from typing import Any, Dict, List, Optional
+
+from . import settings
+
+# ── Redis (short-term) ────────────────────────────────────────────────────────
+
+_redis = None
+_redis_tried = False
+_mem: Dict[str, Any] = {}  # fallback: key -> (json_str, expiry_ts)
+
+
+def _get_redis():
+    global _redis, _redis_tried
+    if _redis_tried:
+        return _redis
+    _redis_tried = True
+    if not settings.REDIS_URL:
+        print("[audata.storage] REDIS_URL not set — using in-memory session store.")
+        return None
+    try:
+        import redis
+        r = redis.from_url(settings.REDIS_URL, decode_responses=True, socket_connect_timeout=5)
+        r.ping()
+        _redis = r
+        print("[audata.storage] Redis connected.")
+    except Exception as e:
+        print(f"[audata.storage] Redis unavailable ({e}); using in-memory session store.")
+        _redis = None
+    return _redis
+
+
+def redis_status() -> Dict[str, Any]:
+    r = _get_redis()
+    if r is None:
+        return {"connected": False, "backend": "in-memory", "url_set": bool(settings.REDIS_URL)}
+    try:
+        r.ping()
+        return {"connected": True, "backend": "redis"}
+    except Exception as e:
+        return {"connected": False, "backend": "in-memory", "error": str(e)}
+
+
+def _skey(session_id: str, key: str) -> str:
+    return f"audata:sess:{session_id}:{key}"
+
+
+def session_set(session_id: str, key: str, value: Any, ttl: Optional[int] = None) -> None:
+    ttl = ttl or settings.SESSION_TTL_SECONDS
+    full = _skey(session_id, key)
+    payload = json.dumps(value)
+    r = _get_redis()
+    if r:
+        r.set(full, payload, ex=ttl)
+    else:
+        _mem[full] = (payload, time.time() + ttl)
+
+
+def session_get(session_id: str, key: str) -> Any:
+    full = _skey(session_id, key)
+    r = _get_redis()
+    if r:
+        v = r.get(full)
+    else:
+        tup = _mem.get(full)
+        v = None
+        if tup:
+            val, exp = tup
+            if exp > time.time():
+                v = val
+            else:
+                _mem.pop(full, None)
+    return json.loads(v) if v else None
+
+
+# ── SQLite (long-term) ────────────────────────────────────────────────────────
+
+_db_lock = threading.Lock()
+
+
+def _conn():
+    c = sqlite3.connect(settings.AUDATA_DB_PATH)
+    c.row_factory = sqlite3.Row
+    return c
+
+
+def init_db() -> None:
+    with _db_lock, _conn() as c:
+        c.execute("""CREATE TABLE IF NOT EXISTS papers (
+            id TEXT PRIMARY KEY, doi TEXT, title TEXT, source TEXT,
+            data TEXT NOT NULL, created_at REAL, updated_at REAL)""")
+        c.execute("""CREATE TABLE IF NOT EXISTS sessions (
+            session_id TEXT PRIMARY KEY, data TEXT, updated_at REAL)""")
+        # Forward-looking: detection agents will write calibrated flags here.
+        c.execute("""CREATE TABLE IF NOT EXISTS flags (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, paper_id TEXT, agent TEXT,
+            severity TEXT, data TEXT, created_at REAL)""")
+
+
+def save_paper(paper: Dict[str, Any]) -> str:
+    pid = paper.get("id") or paper.get("doi") or paper.get("title") or "unknown"
+    now = time.time()
+    with _db_lock, _conn() as c:
+        c.execute(
+            """INSERT INTO papers (id, doi, title, source, data, created_at, updated_at)
+               VALUES (?,?,?,?,?,?,?)
+               ON CONFLICT(id) DO UPDATE SET doi=excluded.doi, title=excluded.title,
+                 source=excluded.source, data=excluded.data, updated_at=excluded.updated_at""",
+            (pid, paper.get("doi", ""), paper.get("title", ""), paper.get("source", ""),
+             json.dumps(paper), now, now),
+        )
+    return pid
+
+
+def list_papers(limit: int = 50) -> List[Dict[str, Any]]:
+    with _db_lock, _conn() as c:
+        rows = c.execute("SELECT data FROM papers ORDER BY updated_at DESC LIMIT ?", (limit,)).fetchall()
+    return [json.loads(r["data"]) for r in rows]
+
+
+def get_paper(pid: str) -> Optional[Dict[str, Any]]:
+    with _db_lock, _conn() as c:
+        row = c.execute("SELECT data FROM papers WHERE id=?", (pid,)).fetchone()
+    return json.loads(row["data"]) if row else None
+
+
+def db_status() -> Dict[str, Any]:
+    try:
+        with _db_lock, _conn() as c:
+            n = c.execute("SELECT COUNT(*) AS n FROM papers").fetchone()["n"]
+        return {"connected": True, "backend": "sqlite", "path": settings.AUDATA_DB_PATH, "papers": n}
+    except Exception as e:
+        return {"connected": False, "error": str(e)}
