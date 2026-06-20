@@ -279,12 +279,12 @@ function PaperPanel({ paper, onClear }: { paper: PaperUnderAudit; onClear: () =>
       {(paper.has_full_text || paper.has_pdf) && (
         <Tabs defaultValue={paper.has_pdf ? "pdf" : "fulltext"}>
           <TabsList>
+            {paper.has_pdf && <TabsTrigger value="pdf">PDF</TabsTrigger>}
             {paper.has_full_text && (
               <TabsTrigger value="fulltext">
                 Full text <span className="text-muted-foreground ml-1">({paper.char_count.toLocaleString()})</span>
               </TabsTrigger>
             )}
-            {paper.has_pdf && <TabsTrigger value="pdf">PDF</TabsTrigger>}
           </TabsList>
 
           {paper.has_full_text && (
