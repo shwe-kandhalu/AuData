@@ -1,19 +1,17 @@
-// Renders a PDF with pdf.js and overlays highlights on text that matches any of
-// the given terms (computed from the text-content positions, so it works without
-// the fragile text-layer). Scrolls to the first match. Used to evidence-link a
-// flagged reference to where it appears in the paper.
+// Renders a PDF with pdf.js, fit to the container width, and highlights the
+// full sentence(s) containing any of the given terms (expanded from the matched
+// text run to sentence boundaries). Scrolls to the first match. Used to
+// evidence-link a flagged reference to where it appears in the paper.
 
 import { useEffect, useRef, useState } from "react";
 import * as pdfjsLib from "pdfjs-dist";
-// Vite resolves this to a hashed URL for the pdf.js worker.
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { Loader2 } from "lucide-react";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
 // Safari doesn't implement async iteration on ReadableStream, which pdf.js uses
-// internally (e.g. getTextContent) → "undefined is not a function (near
-// '...value of readableStream...')". Polyfill it from the reader.
+// internally (getTextContent) → "undefined is not a function (...readableStream)".
 (() => {
   const proto: any = typeof ReadableStream !== "undefined" ? ReadableStream.prototype : null;
   if (proto && !proto[Symbol.asyncIterator]) {
@@ -29,7 +27,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
   }
 })();
 
-export function PdfHighlightViewer({ url, terms, scale = 1.35 }: { url: string; terms: string[]; scale?: number }) {
+export function PdfHighlightViewer({ url, terms }: { url: string; terms: string[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [err, setErr] = useState("");
@@ -46,18 +44,22 @@ export function PdfHighlightViewer({ url, terms, scale = 1.35 }: { url: string; 
     (async () => {
       let matches = 0;
       try {
-        // Fetch the bytes ourselves and pass an in-memory buffer — pdf.js's
-        // URL/stream path uses ReadableStream async iteration, which Safari
-        // doesn't support ("...value of readableStream...").
         const resp = await fetch(url);
         if (!resp.ok) throw new Error(`Could not load PDF (${resp.status})`);
         const data = new Uint8Array(await resp.arrayBuffer());
         if (cancelled) return;
         const pdf = await pdfjsLib.getDocument({ data }).promise;
         if (cancelled) return;
+
+        // Fit the page width to the container so it never overflows the dialog.
+        const first = await pdf.getPage(1);
+        const base = first.getViewport({ scale: 1 });
+        const cw = (container.clientWidth || 820) - 24;
+        const scale = Math.max(0.6, Math.min(2.2, cw / base.width));
+
         let firstHl: HTMLElement | null = null;
         for (let n = 1; n <= pdf.numPages; n++) {
-          const page = await pdf.getPage(n);
+          const page = n === 1 ? first : await pdf.getPage(n);
           if (cancelled) return;
           const viewport = page.getViewport({ scale });
           const pageDiv = document.createElement("div");
@@ -69,23 +71,54 @@ export function PdfHighlightViewer({ url, terms, scale = 1.35 }: { url: string; 
           await page.render({ canvas, canvasContext: canvas.getContext("2d")!, viewport }).promise;
           if (cancelled) return;
 
-          if (lowTerms.length) {
-            try {
-              const tc = await page.getTextContent();
-              for (const item of tc.items as any[]) {
-                const str = (item.str || "").toLowerCase();
-                if (str.length < 2 || !lowTerms.some((t) => str.includes(t))) continue;
-                const m = pdfjsLib.Util.transform(viewport.transform, item.transform);
+          if (!lowTerms.length) continue;
+          try {
+            const tc = await page.getTextContent();
+            const items = tc.items as any[];
+            // Concatenate the page text, tracking each run's char span.
+            let full = "";
+            const spans: { start: number; end: number; it: any }[] = [];
+            for (const it of items) {
+              const str = it.str || "";
+              const start = full.length;
+              full += str;
+              spans.push({ start, end: full.length, it });
+              full += it.hasEOL ? "\n" : (str && !/\s$/.test(str) ? " " : "");
+            }
+            const low = full.toLowerCase();
+            // Expand each match to its sentence and collect unique ranges.
+            const ranges = new Map<string, [number, number]>();
+            for (const term of lowTerms) {
+              let i = low.indexOf(term);
+              while (i !== -1) {
+                let s = i;
+                while (s > 0 && !".!?".includes(full[s - 1])) s--;
+                while (s < i && /\s/.test(full[s])) s++;
+                let e = i + term.length;
+                while (e < full.length && !".!?".includes(full[e])) e++;
+                if (e < full.length) e++;
+                ranges.set(`${s}:${e}`, [s, e]);
+                i = low.indexOf(term, i + term.length);
+              }
+            }
+            if (ranges.size) {
+              const hlIdx = new Set<number>();
+              for (const [rs, re] of ranges.values()) {
+                spans.forEach((sp, idx) => { if (sp.start < re && sp.end > rs) hlIdx.add(idx); });
+              }
+              for (const idx of hlIdx) {
+                const it = spans[idx].it;
+                const m = pdfjsLib.Util.transform(viewport.transform, it.transform);
                 const fontH = Math.hypot(m[2], m[3]) || 10;
-                const w = (item.width || 0) * scale || item.str.length * fontH * 0.5;
+                const w = (it.width || 0) * scale || it.str.length * fontH * 0.5;
                 const hl = document.createElement("div");
                 hl.style.cssText = `position:absolute;left:${m[4]}px;top:${m[5] - fontH}px;width:${w}px;height:${fontH * 1.25}px;background:rgba(250,204,21,.45);border-radius:2px;pointer-events:none`;
                 pageDiv.appendChild(hl);
-                matches++;
                 if (!firstHl) firstHl = hl;
               }
-            } catch { /* text extraction failed on this page — keep rendering */ }
-          }
+              matches += ranges.size;
+            }
+          } catch { /* text extraction failed on this page — keep rendering */ }
         }
         if (cancelled) return;
         setMatchCount(matches);
@@ -96,7 +129,7 @@ export function PdfHighlightViewer({ url, terms, scale = 1.35 }: { url: string; 
       }
     })();
     return () => { cancelled = true; };
-  }, [url, terms.join("|"), scale]);
+  }, [url, terms.join("|")]);
 
   return (
     <div className="space-y-2">
@@ -104,10 +137,10 @@ export function PdfHighlightViewer({ url, terms, scale = 1.35 }: { url: string; 
       {status === "error" && <div className="text-sm text-red-600">Couldn't render PDF: {err}</div>}
       {status === "ready" && (
         <div className="text-xs text-muted-foreground">
-          {matchCount > 0 ? `${matchCount} highlighted match${matchCount === 1 ? "" : "es"} — scrolled to the first.` : "No matching text found to highlight in the PDF."}
+          {matchCount > 0 ? `Highlighted ${matchCount} passage${matchCount === 1 ? "" : "s"} — scrolled to the first.` : "No matching text found to highlight in the PDF."}
         </div>
       )}
-      <div ref={containerRef} className="overflow-auto max-h-[72vh] bg-muted/30 rounded p-2" />
+      <div ref={containerRef} className="overflow-auto max-h-[78vh] bg-muted/30 rounded p-2" />
     </div>
   );
 }

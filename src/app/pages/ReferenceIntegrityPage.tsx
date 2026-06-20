@@ -296,7 +296,7 @@ export function ReferenceIntegrityPage() {
 
       {/* Locate the selected reference inside the PDF (evidence-linked highlight) */}
       <Dialog open={locateOpen} onOpenChange={setLocateOpen}>
-        <DialogContent className="max-w-5xl">
+        <DialogContent className="max-w-[min(1100px,95vw)] w-[95vw]">
           <DialogHeader>
             <DialogTitle className="text-sm">
               Locate in PDF{sel?.number != null ? ` — reference [${sel.number}]` : ""}
