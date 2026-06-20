@@ -143,6 +143,61 @@ def get_paper(pid: str) -> Optional[Dict[str, Any]]:
     return json.loads(row["data"]) if row else None
 
 
+def save_session(session_id: str, owner: str, title: str, data: Any) -> Dict[str, Any]:
+    now = time.time()
+    blob = json.dumps({"owner": owner or "", "title": title or "Untitled session", "data": data})
+    with _db_lock, _conn() as c:
+        # Preserve created_at on update.
+        row = c.execute("SELECT data FROM sessions WHERE session_id=?", (session_id,)).fetchone()
+        created = now
+        if row:
+            try:
+                created = json.loads(row["data"]).get("created_at", now)
+            except Exception:
+                created = now
+        rec = json.loads(blob)
+        rec["created_at"] = created
+        c.execute(
+            """INSERT INTO sessions (session_id, data, updated_at) VALUES (?,?,?)
+               ON CONFLICT(session_id) DO UPDATE SET data=excluded.data, updated_at=excluded.updated_at""",
+            (session_id, json.dumps(rec), now),
+        )
+    return {"id": session_id, "title": rec["title"], "updated_at": now, "created_at": created}
+
+
+def list_sessions(owner: str) -> List[Dict[str, Any]]:
+    with _db_lock, _conn() as c:
+        rows = c.execute("SELECT session_id, data, updated_at FROM sessions ORDER BY updated_at DESC").fetchall()
+    out = []
+    for r in rows:
+        try:
+            rec = json.loads(r["data"])
+        except Exception:
+            continue
+        if owner and rec.get("owner") and rec.get("owner") != owner:
+            continue
+        out.append({"id": r["session_id"], "title": rec.get("title", "Untitled session"),
+                    "updated_at": r["updated_at"], "created_at": rec.get("created_at", r["updated_at"])})
+    return out
+
+
+def get_session(session_id: str) -> Optional[Dict[str, Any]]:
+    with _db_lock, _conn() as c:
+        row = c.execute("SELECT session_id, data FROM sessions WHERE session_id=?", (session_id,)).fetchone()
+    if not row:
+        return None
+    try:
+        rec = json.loads(row["data"])
+    except Exception:
+        return None
+    return {"id": row["session_id"], "title": rec.get("title", "Untitled session"), "data": rec.get("data")}
+
+
+def delete_session(session_id: str) -> None:
+    with _db_lock, _conn() as c:
+        c.execute("DELETE FROM sessions WHERE session_id=?", (session_id,))
+
+
 def save_pdf(paper_id: str, data: bytes) -> None:
     if not paper_id or not data:
         return

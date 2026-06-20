@@ -246,3 +246,36 @@ def session_paper(session_id: str):
 @app.get("/api/audits")
 def list_audits(limit: int = 50):
     return {"papers": storage.list_papers(limit)}
+
+
+# ── sessions (SQLite, keyed by a per-browser owner id; no auth needed) ─────────
+
+class SessionSaveRequest(BaseModel):
+    title: Optional[str] = "Untitled session"
+    owner: Optional[str] = ""
+    data: Any = None
+
+
+@app.get("/api/sessions")
+def sessions_list(owner: str = ""):
+    return {"sessions": storage.list_sessions(owner)}
+
+
+@app.get("/api/sessions/{session_id}")
+def session_load(session_id: str):
+    sess = storage.get_session(session_id)
+    if not sess:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    return {"session": sess}
+
+
+@app.put("/api/sessions/{session_id}")
+def session_save(session_id: str, req: SessionSaveRequest):
+    meta = storage.save_session(session_id, req.owner or "", req.title or "Untitled session", req.data)
+    return {"session": meta}
+
+
+@app.delete("/api/sessions/{session_id}")
+def session_delete(session_id: str):
+    storage.delete_session(session_id)
+    return {"ok": True}

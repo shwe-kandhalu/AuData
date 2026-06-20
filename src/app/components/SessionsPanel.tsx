@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore, SESSION_STORAGE_KEY } from "../lib/store";
-import { useAuth } from "../lib/auth";
 import { listSessions, loadSession, saveSession, deleteSession, SessionMeta } from "../lib/sessions";
 import { AIService } from "../lib/mockServices";
 import { Card } from "./ui/card";
@@ -17,7 +16,6 @@ type SyncStatus = "idle" | "saving" | "synced" | "error";
 
 export function SessionsPanel() {
   const s = useStore();
-  const { user } = useAuth();
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
   const [busy, setBusy] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
@@ -34,7 +32,6 @@ export function SessionsPanel() {
   const titledRef = useRef<Set<string>>(new Set());
 
   async function refresh() {
-    if (!user) { setSessions([]); return; }
     try {
       const items = await listSessions();
       setSessions(items);
@@ -56,15 +53,16 @@ export function SessionsPanel() {
       }
     }
   }
-  useEffect(() => { refresh(); }, [user?.id]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { refresh(); }, []);
 
   // On a fresh page load, silently restore the last active session so a browser
   // refresh keeps the user's work (and tab) in place. Runs once when auth is
   // ready, and only if nothing is already loaded — never clobbers active work.
   const restoredRef = useRef(false);
   useEffect(() => {
-    if (!user || restoredRef.current) return;
-    if (s.currentSessionId || s.history.length > 0) { restoredRef.current = true; return; }
+    if (restoredRef.current) return;
+    if (s.currentSessionId || s.history.length > 0 || s.paperUnderAudit) { restoredRef.current = true; return; }
     let savedId: string | null = null;
     try { savedId = localStorage.getItem(SESSION_STORAGE_KEY); } catch { /* ignore */ }
     restoredRef.current = true;
@@ -83,7 +81,8 @@ export function SessionsPanel() {
         try { localStorage.removeItem(SESSION_STORAGE_KEY); } catch { /* ignore */ }
       }
     })();
-  }, [user?.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function onLoad(id: string) {
     setBusy(true);
@@ -107,6 +106,15 @@ export function SessionsPanel() {
     } catch (e: any) { toast.error(e.message || "Delete failed"); }
   }
 
+  // Pick a session title: explicit title › paper under audit › PICO goal.
+  function sessionTitle(): string {
+    if (s.currentSessionTitle && s.currentSessionTitle !== "Untitled session") return s.currentSessionTitle;
+    const paperTitle = s.paperUnderAudit?.title?.trim();
+    if (paperTitle) return paperTitle.slice(0, 60) + (paperTitle.length > 60 ? "…" : "");
+    const goal = s.history[0]?.goal || "";
+    return (goal.slice(0, 50) + (goal.length > 50 ? "…" : "")) || "Untitled session";
+  }
+
   async function onNew() {
     // Flush any pending debounced save synchronously so the current work is
     // persisted before we wipe the store.
@@ -114,14 +122,10 @@ export function SessionsPanel() {
       window.clearTimeout(saveTimer.current);
       saveTimer.current = null;
     }
-    if (user && s.history.length > 0) {
+    if (s.history.length > 0 || s.paperUnderAudit) {
       try {
         const id = s.currentSessionId || genId();
-        const firstGoal = s.history[0]?.goal || "";
-        const title =
-          s.currentSessionTitle && s.currentSessionTitle !== "Untitled session"
-            ? s.currentSessionTitle
-            : (firstGoal.slice(0, 50) + (firstGoal.length > 50 ? "…" : "")) || "Untitled session";
+        const title = sessionTitle();
         await saveSession(id, title, s.snapshot());
         await refresh();
       } catch (e) {
@@ -135,8 +139,7 @@ export function SessionsPanel() {
   // Auto-save: fires whenever the snapshot-relevant state changes, debounced.
   // ---------------------------------------------------------------------------
   useEffect(() => {
-    if (!user) return;
-    if (s.history.length === 0) return;
+    if (s.history.length === 0 && !s.paperUnderAudit) return;
 
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(async () => {
@@ -144,11 +147,7 @@ export function SessionsPanel() {
       try {
         const id = s.currentSessionId || genId();
         const firstGoal = s.history[0]?.goal || "";
-        // Use a string-slice title up front so we never block on the LLM.
-        const fallbackTitle = firstGoal.slice(0, 50) + (firstGoal.length > 50 ? "…" : "");
-        let title = s.currentSessionTitle && s.currentSessionTitle !== "Untitled session"
-          ? s.currentSessionTitle
-          : fallbackTitle || "Untitled session";
+        const title = sessionTitle();
 
         if (!s.currentSessionId) {
           s.setCurrentSessionId(id);
@@ -195,7 +194,7 @@ export function SessionsPanel() {
     // Re-run when any major piece of the snapshot changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    user?.id,
+    s.paperUnderAudit,
     s.history,
     s.pico,
     s.inclusion,
@@ -212,14 +211,6 @@ export function SessionsPanel() {
     s.prisma,
   ]);
 
-  if (!user) {
-    return (
-      <Card className="p-3 text-xs text-muted-foreground">
-        Sign in (top-right) to save and sync research sessions.
-      </Card>
-    );
-  }
-
   return (
     <Card className="p-3 space-y-2">
       <div className="flex items-center justify-between">
@@ -232,7 +223,7 @@ export function SessionsPanel() {
       <div className="space-y-1 max-h-48 overflow-y-auto">
         {sessions.length === 0 && (
           <div className="text-xs text-muted-foreground">
-            Sessions auto-save to your account.
+            Sessions auto-save as you work.
           </div>
         )}
         {sessions.map(m => {
