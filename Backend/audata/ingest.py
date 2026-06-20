@@ -181,6 +181,37 @@ def parse_pdf_bytes(data: bytes, filename: str) -> Dict[str, Any]:
 
 # ── metadata resolution + search ──────────────────────────────────────────────
 
+def search_openalex(query: str, rows: int = 5) -> List[Dict[str, Any]]:
+    """Search OpenAlex by free text — a fallback when Crossref misses."""
+    query = (query or "").strip()
+    if not query:
+        return []
+    try:
+        r = requests.get(OPENALEX_WORKS, headers=_HEADERS, timeout=_TIMEOUT, params={
+            "search": query[:350], "per_page": max(1, min(rows, 10)), "mailto": _MAILTO,
+        })
+        if r.status_code != 200:
+            return []
+        results = (r.json() or {}).get("results") or []
+    except Exception:
+        return []
+    out: List[Dict[str, Any]] = []
+    for w in results:
+        loc = w.get("primary_location") or {}
+        out.append({
+            "title": w.get("title") or w.get("display_name") or "",
+            "doi": (w.get("doi") or "").replace("https://doi.org/", "").lower(),
+            "year": w.get("publication_year"),
+            "authors": ", ".join((au.get("author") or {}).get("display_name", "")
+                                  for au in (w.get("authorships") or [])[:8]).strip(", "),
+            "container": ((loc.get("source") or {}) or {}).get("display_name") or "",
+            "url": loc.get("landing_page_url") or w.get("id") or "",
+            "abstract": _reconstruct_inverted(w.get("abstract_inverted_index")),
+            "retracted": bool(w.get("is_retracted")),
+        })
+    return out
+
+
 def resolve_doi(doi: str) -> Dict[str, Any]:
     doi = (doi or "").strip().lower()
     if not doi:

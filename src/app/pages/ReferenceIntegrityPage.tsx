@@ -355,27 +355,33 @@ function Detail({ r, decision, onDecide, canLocate, onLocate }: {
   const showClaim = !!claimV && !["skipped", "no_claim"].includes(claimV);
   return (
     <div className="space-y-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="space-y-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <Badge variant="outline" className={SEV_STYLE[r.severity] + " capitalize"}>{r.severity === "none" ? "OK" : r.severity}</Badge>
-            {r.number != null && <Badge variant="secondary" className="text-[10px]">ref [{r.number}]</Badge>}
-            {r.retracted && <Badge variant="outline" className="bg-red-500/10 text-red-600 border-red-500/30 gap-1"><Ban className="size-3" />Retracted</Badge>}
-            {!r.resolved && <Badge variant="outline" className="bg-red-500/10 text-red-600 border-red-500/30 gap-1"><FileQuestion className="size-3" />Unresolved</Badge>}
-            {typeof r.cited_count === "number" && <span className="text-[11px] text-muted-foreground">cited {r.cited_count}× in text</span>}
-          </div>
-          {r.resolved ? (
-            <a href={r.matched.url || "#"} target="_blank" rel="noreferrer" className="text-base font-semibold hover:underline inline-flex items-center gap-1">
-              {r.matched.title || r.matched.doi}<ExternalLink className="size-3.5 text-muted-foreground" />
-            </a>
-          ) : <h3 className="text-base font-semibold text-red-600">Could not resolve this reference</h3>}
-          {r.resolved && <p className="text-xs text-muted-foreground">{[r.matched.authors, r.matched.year, r.matched.container].filter(Boolean).join(" · ")}</p>}
+      {/* Top bar: badges + actions */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Badge variant="outline" className={SEV_STYLE[r.severity] + " capitalize"}>{r.severity === "none" ? "OK" : r.severity}</Badge>
+          {r.number != null && <Badge variant="secondary" className="text-[10px]">ref [{r.number}]</Badge>}
+          {r.retracted && <Badge variant="outline" className="bg-red-500/10 text-red-600 border-red-500/30 gap-1"><Ban className="size-3" />Retracted</Badge>}
+          {!r.resolved && <Badge variant="outline" className="bg-red-500/10 text-red-600 border-red-500/30 gap-1"><FileQuestion className="size-3" />Unresolved</Badge>}
+          {typeof r.cited_count === "number" && <span className="text-[11px] text-muted-foreground">cited {r.cited_count}× in text</span>}
         </div>
         <div className="flex gap-1.5 shrink-0">
           {canLocate && <Button variant="outline" size="sm" onClick={onLocate} title="Highlight in the PDF"><FileSearch className="size-3.5 mr-1" />Locate in PDF</Button>}
           <Button variant={decision === "accept" ? "default" : "outline"} size="sm" onClick={() => onDecide("accept")}><Check className="size-3.5 mr-1" />Accept</Button>
           <Button variant={decision === "dismiss" ? "secondary" : "outline"} size="sm" onClick={() => onDecide("dismiss")}><X className="size-3.5 mr-1" />Dismiss</Button>
         </div>
+      </div>
+
+      {/* Title — full width */}
+      <div className="space-y-1">
+        {r.resolved ? (
+          <a href={r.matched.url || "#"} target="_blank" rel="noreferrer" className="block text-lg font-semibold leading-snug hover:underline">
+            {r.matched.title || r.matched.doi}
+            <ExternalLink className="inline size-3.5 ml-1.5 text-muted-foreground align-baseline" />
+          </a>
+        ) : <h3 className="text-lg font-semibold leading-snug text-red-600">Could not resolve this reference</h3>}
+        {r.resolved && (r.matched.authors || r.matched.year || r.matched.container) && (
+          <p className="text-sm text-muted-foreground">{[r.matched.authors, r.matched.year, r.matched.container].filter(Boolean).join(" · ")}</p>
+        )}
       </div>
 
       {/* Issues with detailed explanations */}

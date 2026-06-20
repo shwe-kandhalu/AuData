@@ -188,14 +188,29 @@ def resolve_reference(doi: str, raw: str) -> Dict[str, Any]:
         # Pick the search hit whose title is best covered by the citation text
         # (robust to authors/year/journal noise that full-string similarity hurts on).
         best, best_cov = None, 0.0
-        for c in ingest.search_works(raw, rows=5):
+        for c in ingest.search_works(raw, rows=5):       # Crossref
             cov = _title_coverage(raw, c.get("title", ""))
-            if cov > best_cov:
+            if cov > best_cov and c.get("doi"):
                 best_cov, best = cov, c
-        if best and best.get("doi") and best_cov >= _COVERAGE_MIN:
-            doi = best["doi"]
-            meta = ingest.resolve_doi(doi)
+        if best_cov < _COVERAGE_MIN:                       # OpenAlex fallback
+            for c in ingest.search_openalex(raw, rows=5):
+                cov = _title_coverage(raw, c.get("title", ""))
+                if cov > best_cov:
+                    best_cov, best = cov, c
+        if best and best_cov >= _COVERAGE_MIN:
             match_cov = best_cov
+            if best.get("doi"):
+                doi = best["doi"]
+                meta = ingest.resolve_doi(doi)
+            else:
+                # OpenAlex-only work (no DOI) — use its record directly.
+                meta = {
+                    "resolved": True, "doi": "", "title": best.get("title", ""),
+                    "authors": best.get("authors", ""), "year": best.get("year"),
+                    "container": best.get("container", ""), "abstract": best.get("abstract", ""),
+                    "url": best.get("url", ""), "retracted": bool(best.get("retracted")),
+                    "providers": ["OpenAlex"],
+                }
     resolved = bool(meta.get("resolved"))
     title = meta.get("title", "") if resolved else ""
     title_similarity: Optional[float] = round(match_cov, 3) if (resolved and match_cov is not None) else None
