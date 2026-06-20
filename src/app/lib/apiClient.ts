@@ -995,3 +995,83 @@ export const IngestService = {
     } catch { return null; }
   },
 };
+
+// ---------------------------------------------------------------------------
+// Reference Integrity (Detect)
+// ---------------------------------------------------------------------------
+
+export type RefSeverity = "none" | "info" | "low" | "medium" | "high";
+export type RefInput = { doi?: string; raw?: string; claim?: string };
+export type RefIssue = { code: string; label: string; severity: RefSeverity };
+export type RefClaim = {
+  verdict: "supports" | "partial" | "unsupported" | "unrelated" | "unverifiable" | "no_claim" | "skipped" | "error";
+  confidence: number; reasoning: string; quote: string;
+};
+export type RefResult = {
+  index: number;
+  input: RefInput;
+  resolved: boolean;
+  matched: { title?: string; doi?: string; year?: number | null; authors?: string; container?: string; url?: string; providers?: string[]; abstract_present?: boolean };
+  title_similarity?: number | null;
+  retracted: boolean;
+  claim: RefClaim;
+  issues: RefIssue[];
+  severity: RefSeverity;
+  status: "flagged" | "ok";
+};
+export type RefSummary = {
+  total: number; flagged: number; retracted: number; unresolved: number;
+  by_severity: Record<string, number>; by_issue: Record<string, number>;
+};
+
+export const ReferenceIntegrityService = {
+  // Pull candidate references (DOIs) out of an already-ingested paper.
+  async fromPaper(paperId: string, signal?: AbortSignal): Promise<RefInput[]> {
+    const r = await fetch(`${apiConfig.baseUrl}/reference-integrity/from-paper?paper_id=${encodeURIComponent(paperId)}`, { signal });
+    if (!r.ok) throw new Error(`Could not extract references (${r.status})`);
+    const j = await r.json();
+    return j?.references || [];
+  },
+
+  // Stream one flag per reference as it finishes; resolve with all + summary.
+  async check(
+    references: RefInput[],
+    opts: { checkClaims?: boolean; signal?: AbortSignal; onResult?: (r: RefResult) => void } = {},
+  ): Promise<{ results: RefResult[]; summary: RefSummary | null }> {
+    const res = await fetch(`${apiConfig.baseUrl}/reference-integrity/check/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ references, model: apiConfig.model, check_claims: opts.checkClaims !== false }),
+      signal: opts.signal,
+    });
+    if (!res.ok || !res.body) throw new Error(`reference-integrity stream failed (${res.status})`);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    const results: RefResult[] = [];
+    let summary: RefSummary | null = null;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let idx: number;
+      while ((idx = buf.indexOf("\n\n")) !== -1) {
+        const rawEvt = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+        let event = "message", data = "";
+        for (const line of rawEvt.split("\n")) {
+          if (line.startsWith("event:")) event = line.slice(6).trim();
+          else if (line.startsWith("data:")) data += line.slice(5).trim();
+        }
+        if (!data) continue;
+        let parsed: any;
+        try { parsed = JSON.parse(data); } catch { continue; }
+        if (event === "result") { results.push(parsed); opts.onResult?.(parsed); }
+        else if (event === "done") summary = parsed?.summary ?? null;
+        else if (event === "error") throw new Error(parsed?.message || "reference-integrity error");
+      }
+    }
+    results.sort((a, b) => a.index - b.index);
+    return { results, summary };
+  },
+};

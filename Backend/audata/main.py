@@ -15,14 +15,20 @@ caches the paper under audit in Redis (short-term).
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+import json as _json
+import queue
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any, Dict, List, Optional
 
 import requests
 from fastapi import FastAPI, HTTPException, UploadFile, File, Header, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from . import settings, ingest, browserbase_fetch, storage, fulltext
+from . import settings, ingest, browserbase_fetch, storage, fulltext, llm
+from . import reference_integrity as refint
 
 app = FastAPI(title="AuData API", version="0.1.0")
 
@@ -279,3 +285,102 @@ def session_save(session_id: str, req: SessionSaveRequest):
 def session_delete(session_id: str):
     storage.delete_session(session_id)
     return {"ok": True}
+
+
+# ── Reference Integrity (Detect) ──────────────────────────────────────────────
+
+class RefItem(BaseModel):
+    doi: Optional[str] = ""
+    raw: Optional[str] = ""
+    claim: Optional[str] = ""
+
+
+class ReferenceIntegrityRequest(BaseModel):
+    references: List[RefItem]
+    model: Optional[str] = None
+    check_claims: bool = True
+
+
+def _ri_model(req: "ReferenceIntegrityRequest"):
+    return llm.get_model(req.model) if req.check_claims else None
+
+
+def _ri_check_all(refs: List["RefItem"], model, check_claims: bool) -> List[Dict[str, Any]]:
+    results: List[Optional[Dict[str, Any]]] = [None] * len(refs)
+    workers = min(8, max(1, len(refs)))
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        futs = {ex.submit(refint.check_reference, i, r.doi or "", r.raw or "", r.claim or "", model, check_claims): i
+                for i, r in enumerate(refs)}
+        for fut in as_completed(futs):
+            i = futs[fut]
+            try:
+                results[i] = fut.result()
+            except Exception as e:
+                results[i] = {"index": i, "input": {"doi": refs[i].doi or "", "raw": refs[i].raw or "", "claim": refs[i].claim or ""},
+                              "resolved": False, "matched": {}, "retracted": False,
+                              "claim": {"verdict": "error", "confidence": 0.0, "reasoning": str(e), "quote": ""},
+                              "issues": [{"code": "error", "label": f"Check failed: {e}", "severity": "medium"}],
+                              "severity": "medium", "status": "flagged"}
+    return [r for r in results if r is not None]
+
+
+@app.post("/api/reference-integrity/check")
+def reference_integrity_check(req: ReferenceIntegrityRequest):
+    model = _ri_model(req)
+    results = _ri_check_all(req.references or [], model, req.check_claims)
+    return {"results": results, "summary": refint.summarize(results)}
+
+
+@app.post("/api/reference-integrity/check/stream")
+def reference_integrity_stream(req: ReferenceIntegrityRequest):
+    refs = req.references or []
+    model = _ri_model(req)
+    event_queue: "queue.Queue[tuple]" = queue.Queue()
+
+    def _run():
+        results: List[Dict[str, Any]] = []
+        try:
+            workers = min(8, max(1, len(refs)))
+            with ThreadPoolExecutor(max_workers=workers) as ex:
+                futs = {ex.submit(refint.check_reference, i, r.doi or "", r.raw or "", r.claim or "", model, req.check_claims): i
+                        for i, r in enumerate(refs)}
+                for fut in as_completed(futs):
+                    i = futs[fut]
+                    try:
+                        res = fut.result()
+                    except Exception as e:
+                        res = {"index": i, "input": {"doi": refs[i].doi or "", "raw": refs[i].raw or "", "claim": refs[i].claim or ""},
+                               "resolved": False, "matched": {}, "retracted": False,
+                               "claim": {"verdict": "error", "confidence": 0.0, "reasoning": str(e), "quote": ""},
+                               "issues": [{"code": "error", "label": f"Check failed: {e}", "severity": "medium"}],
+                               "severity": "medium", "status": "flagged"}
+                    results.append(res)
+                    event_queue.put(("result", res))
+            event_queue.put(("done", {"summary": refint.summarize(results)}))
+        except Exception as e:
+            event_queue.put(("error", {"message": str(e)}))
+
+    threading.Thread(target=_run, daemon=True).start()
+
+    def _gen():
+        while True:
+            try:
+                event_type, data = event_queue.get(timeout=600)
+            except queue.Empty:
+                yield f"event: error\ndata: {_json.dumps({'message': 'timeout'})}\n\n"
+                return
+            yield f"event: {event_type}\ndata: {_json.dumps(data)}\n\n"
+            if event_type in ("done", "error"):
+                return
+
+    return StreamingResponse(_gen(), media_type="text/event-stream")
+
+
+@app.get("/api/reference-integrity/from-paper")
+def reference_integrity_from_paper(paper_id: str):
+    """Extract candidate references (DOIs) from a stored paper's reference list."""
+    paper = storage.get_paper(paper_id)
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found. Ingest it first.")
+    refs = refint.extract_references_from_text(paper.get("full_text", ""))
+    return {"references": refs, "count": len(refs)}
