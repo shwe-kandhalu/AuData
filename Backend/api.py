@@ -41,6 +41,7 @@ from config import Config
 from models import Paper as BackendPaper, PICOCriteria, clean_markup
 from utils import AIService, Deduplicator, AITableExtractor
 from data_services import DataAggregator
+import reference_integrity as refint
 from leads_screening import (
     LEADS_MODEL_NAME,
     LEADS_SCORE_THRESHOLD,
@@ -3990,3 +3991,133 @@ Rules:
 
     resp = model.invoke([HumanMessage(content=prompt)])
     return {"summary": resp.content.strip()}
+
+
+# ---------------------------------------------------------------------------
+# Reference Integrity (AuData)
+# ---------------------------------------------------------------------------
+# Resolve each cited reference (Crossref + OpenAlex), check retraction status,
+# and assess whether the reference supports the in-text claim attributed to it.
+# Returns one calibrated, evidence-linked flag per reference. Reviewer-assist.
+
+
+class RefItem(BaseModel):
+    doi: Optional[str] = ""
+    raw: Optional[str] = ""      # free-text citation string (used if no DOI)
+    claim: Optional[str] = ""    # in-text claim the citing paper attributes to it
+
+
+class ReferenceIntegrityRequest(BaseModel):
+    references: List[RefItem]
+    model: Optional[str] = None
+    check_claims: bool = True
+    task_id: Optional[str] = None
+
+
+def _refint_model(req: "ReferenceIntegrityRequest"):
+    """Resolve a reasoning model for claim checks (None if claims disabled)."""
+    if not req.check_claims:
+        return None
+    return AIService.get_model(resolve_for_thinking(req.model))
+
+
+@app.post("/api/reference-integrity/check")
+def reference_integrity_check(req: ReferenceIntegrityRequest):
+    """Batch reference-integrity check (non-streaming)."""
+    refs = req.references or []
+    model = _refint_model(req)
+    results: List[Dict[str, Any]] = [None] * len(refs)  # type: ignore
+
+    max_workers = min(8, max(1, len(refs)))
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futures = {
+            ex.submit(
+                refint.check_reference, i, r.doi or "", r.raw or "", r.claim or "",
+                model, req.check_claims,
+            ): i
+            for i, r in enumerate(refs)
+        }
+        for fut in as_completed(futures):
+            i = futures[fut]
+            try:
+                results[i] = fut.result()
+            except Exception as e:
+                results[i] = {
+                    "index": i, "input": {"doi": refs[i].doi or "", "raw": refs[i].raw or "", "claim": refs[i].claim or ""},
+                    "resolved": False, "matched": {}, "retracted": False,
+                    "claim": {"verdict": "error", "confidence": 0.0, "reasoning": str(e), "quote": ""},
+                    "issues": [{"code": "error", "label": f"Check failed: {e}", "severity": "medium"}],
+                    "severity": "medium", "status": "flagged",
+                }
+
+    return {"results": results, "summary": refint.summarize(results)}
+
+
+@app.post("/api/reference-integrity/check/stream")
+def reference_integrity_check_stream(req: ReferenceIntegrityRequest):
+    """Streaming reference-integrity check.
+
+    Emits SSE events as each reference finishes so the UI can flag live:
+      event: result   data: <one reference flag object>
+      event: done      data: {summary}
+      event: error     data: {message}
+      event: canceled  data: {message}
+    """
+    refs = req.references or []
+    model = _refint_model(req)
+    cancel_event = _register_cancel(req.task_id)
+    event_queue: "queue.Queue[Tuple[str, dict]]" = queue.Queue()
+
+    def _run():
+        results: List[Dict[str, Any]] = []
+        try:
+            max_workers = min(8, max(1, len(refs)))
+            with ThreadPoolExecutor(max_workers=max_workers) as ex:
+                futures = {
+                    ex.submit(
+                        refint.check_reference, i, r.doi or "", r.raw or "", r.claim or "",
+                        model, req.check_claims,
+                    ): i
+                    for i, r in enumerate(refs)
+                }
+                for fut in as_completed(futures):
+                    if cancel_event and cancel_event.is_set():
+                        raise TaskCanceled()
+                    i = futures[fut]
+                    try:
+                        res = fut.result()
+                    except Exception as e:
+                        res = {
+                            "index": i,
+                            "input": {"doi": refs[i].doi or "", "raw": refs[i].raw or "", "claim": refs[i].claim or ""},
+                            "resolved": False, "matched": {}, "retracted": False,
+                            "claim": {"verdict": "error", "confidence": 0.0, "reasoning": str(e), "quote": ""},
+                            "issues": [{"code": "error", "label": f"Check failed: {e}", "severity": "medium"}],
+                            "severity": "medium", "status": "flagged",
+                        }
+                    results.append(res)
+                    event_queue.put(("result", res))
+            event_queue.put(("done", {"summary": refint.summarize(results)}))
+        except TaskCanceled:
+            event_queue.put(("canceled", {"message": "Canceled by user"}))
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            event_queue.put(("error", {"message": str(e)}))
+        finally:
+            _unregister_cancel(req.task_id)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+    def _gen():
+        while True:
+            try:
+                event_type, data = event_queue.get(timeout=600)
+            except queue.Empty:
+                yield f"event: error\ndata: {_json.dumps({'message': 'timeout'})}\n\n"
+                return
+            yield f"event: {event_type}\ndata: {_json.dumps(data)}\n\n"
+            if event_type in ("done", "error", "canceled"):
+                return
+
+    return StreamingResponse(_gen(), media_type="text/event-stream")
