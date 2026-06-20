@@ -90,7 +90,6 @@ export function ReferenceIntegrityPage() {
   const paper = s.paperUnderAudit;
 
   const [input, setInput] = useState("");
-  const [checkClaims, setCheckClaims] = useState(true);
   const [running, setRunning] = useState(false);
   const [results, setResults] = useState<RefResult[]>([]);
   const [summary, setSummary] = useState<RefSummary | null>(null);
@@ -162,11 +161,11 @@ export function ReferenceIntegrityPage() {
     try {
       let out;
       if (paper) {
-        out = await ReferenceIntegrityService.checkPaper(paper.id, { checkClaims, signal: ac.signal, onResult });
+        out = await ReferenceIntegrityService.checkPaper(paper.id, { checkClaims: true, signal: ac.signal, onResult });
       } else {
         const refs = parseInput(input);
         if (!refs.length) { setError("Ingest a paper, or paste references below."); setRunning(false); return; }
-        out = await ReferenceIntegrityService.check(refs, { checkClaims, signal: ac.signal, onResult });
+        out = await ReferenceIntegrityService.check(refs, { checkClaims: true, signal: ac.signal, onResult });
       }
       setSummary(out.summary); setMetrics(out.metrics);
       persist({ results: out.results, summary: out.summary, metrics: out.metrics, decisions: {} });
@@ -213,10 +212,6 @@ export function ReferenceIntegrityPage() {
                 )}
               </div>
             </div>
-            <label className="flex items-center gap-2 cursor-pointer text-xs text-muted-foreground mt-2">
-              <Checkbox checked={checkClaims} onCheckedChange={(v) => setCheckClaims(v === true)} disabled={running} />
-              Check citation–claim support (uses the LLM; links each reference to the sentence that cites it)
-            </label>
             {!paper && (
               <Textarea
                 value={input} onChange={(e) => setInput(e.target.value)} disabled={running}
