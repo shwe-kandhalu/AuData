@@ -551,25 +551,29 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!localRestored.current) return;          // wait until restore has run
     const t = setTimeout(() => {
-      if (history.length === 0) { try { localStorage.removeItem(LOCAL_SNAPSHOT_KEY); } catch { /* ignore */ } return; }
+      // Persist whenever there's meaningful work — for AuData that's a paper
+      // under audit or detection results, not (EE's) PICO history.
+      const hasWork = history.length > 0 || !!paperUnderAudit || Object.keys(refAudits).length > 0;
+      if (!hasWork) { try { localStorage.removeItem(LOCAL_SNAPSHOT_KEY); } catch { /* ignore */ } return; }
       // Envelope keeps the session identity with the data, so a refresh keeps
       // editing the SAME session instead of spawning a duplicate.
       const env = { data: snapshot(), sessionId: currentSessionId, sessionTitle: currentSessionTitle };
       try {
         localStorage.setItem(LOCAL_SNAPSHOT_KEY, JSON.stringify(env));
       } catch {
-        // Likely the quota — full texts are by far the heaviest field. Save
-        // everything else so the session still restores; the raw full-text
-        // bodies can be re-fetched on the Acquisition tab. (Backend sessions
-        // still keep them.)
+        // Likely the quota — the heaviest fields are the cached full texts and
+        // the paper's full body. Drop those (recoverable from the backend /
+        // Redis); keep metadata + detection results so the session restores.
         try {
-          const { fullTexts: _omit, ...lean } = env.data as any;
-          localStorage.setItem(LOCAL_SNAPSHOT_KEY, JSON.stringify({ ...env, data: lean }));
+          const { fullTexts: _omit, paperUnderAudit: _pua, ...lean } = env.data as any;
+          const leanData = { ...lean, paperUnderAudit: _pua ? { ..._pua, full_text: "" } : _pua };
+          localStorage.setItem(LOCAL_SNAPSHOT_KEY, JSON.stringify({ ...env, data: leanData }));
         } catch { /* still too big — skip this cycle */ }
       }
     }, 600);
     return () => clearTimeout(t);
   }, [history, pico, inclusion, exclusion, query, unifiedSearchQuery, perDbQueries,
+      paperUnderAudit, refAudits,
       sources, numPerSource, model, rawPapers, uniquePapers, duplicatesCount,
       qualityReports, excludedByQuality, qualityOverrides, abstractOverrides,
       fullTextOverrides, rerankThreshold, rerankResults, results, fullTextResults,

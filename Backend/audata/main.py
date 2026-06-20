@@ -87,6 +87,23 @@ class IngestUrlRequest(BaseModel):
     session_id: Optional[str] = ""
 
 
+def _pdf_for_viewer(doi: str, pmcid: str = "") -> Optional[bytes]:
+    """Best-effort free PDF (Unpaywall, then PMC) so the UI can show a PDF tab
+    even when the full text came from structured XML."""
+    try:
+        if doi:
+            b = ingest.fetch_unpaywall_pdf(doi)
+            if b:
+                return b
+        if pmcid:
+            b = fulltext.fetch_pmc_pdf_bytes(pmcid)
+            if b:
+                return b
+    except Exception as e:
+        print(f"[audata _pdf_for_viewer] {e}")
+    return None
+
+
 def _persist(paper: Dict[str, Any], session_id: Optional[str], pdf_bytes: Optional[bytes] = None) -> Dict[str, Any]:
     """Long-term to SQLite, short-term to Redis (if a session id was given)."""
     if pdf_bytes:
@@ -172,6 +189,8 @@ def ingest_fetch(req: IngestFetchRequest):
         retracted=bool(meta.get("retracted")) if meta.get("resolved") else False,
         providers=meta.get("providers", []) if meta.get("resolved") else [],
     )
+    if pdf_bytes is None and doi:
+        pdf_bytes = _pdf_for_viewer(doi)
     _persist(paper, req.session_id, pdf_bytes)
     return {"paper": paper, "resolved": bool(meta.get("resolved")),
             "browserbase": {k: bb_info.get(k) for k in ("status", "session_id", "final_url") if k in bb_info}}
@@ -233,6 +252,8 @@ def ingest_url(req: IngestUrlRequest):
         retracted=bool(meta.get("retracted")) if meta.get("resolved") else False,
         providers=meta.get("providers", []) if meta.get("resolved") else [],
     )
+    if pdf_bytes is None and (doi or pmcid):
+        pdf_bytes = _pdf_for_viewer(doi, pmcid)
     _persist(paper, req.session_id, pdf_bytes)
     return {"paper": paper, "full_text_source": ft_source,
             "browserbase": {k: bb_info.get(k) for k in ("status", "session_id", "final_url") if k in bb_info}}
