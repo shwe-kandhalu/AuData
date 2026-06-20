@@ -26,8 +26,12 @@ from . import ingest, llm
 
 _RESOLVE_SIM = 0.62
 _MISMATCH_SIM = 0.50
+_COVERAGE_MIN = 0.60   # fraction of a candidate title's words that must appear in the citation
 _SEV_RANK = {"none": 0, "info": 1, "low": 2, "medium": 3, "high": 4}
 _FLAGGED = {"low", "medium", "high"}
+
+_GREY_LIT = ("retrieved", "available at", "available from", "accessed", "http://",
+             "https://", "www.", "[online]", "blog", "call for papers", "press release", "white paper")
 
 _REF_MARKER = re.compile(r"(?m)^\s*\[?(\d{1,3})\]?[.)]\s+")
 _CITE_GROUP = re.compile(r"\[([0-9,\s–\-]+)\]")
@@ -44,6 +48,25 @@ def _title_sim(a: str, b: str) -> float:
     if not na or not nb:
         return 0.0
     return difflib.SequenceMatcher(None, na, nb).ratio()
+
+
+def _title_coverage(citation: str, title: str) -> float:
+    """Fraction of the candidate title's significant words found in the citation.
+
+    Robust to the citation carrying extra tokens (authors, year, journal) that a
+    full-string similarity would penalise — the right signal for matching a
+    free-text reference to a search hit.
+    """
+    cite_words = set(re.findall(r"[a-z0-9]+", (citation or "").lower()))
+    title_words = [w for w in re.findall(r"[a-z0-9]+", (title or "").lower()) if len(w) > 3]
+    if len(title_words) < 3:
+        return 0.0
+    return sum(1 for w in title_words if w in cite_words) / len(title_words)
+
+
+def _is_grey_lit(text: str) -> bool:
+    low = (text or "").lower()
+    return any(k in low for k in _GREY_LIT)
 
 
 def _surnames(authors: str) -> Set[str]:
@@ -158,18 +181,24 @@ def resolve_reference(doi: str, raw: str) -> Dict[str, Any]:
     doi = (doi or "").strip().lower() or ingest.detect_doi(raw or "")
     raw = (raw or "").strip()
     meta: Dict[str, Any] = {"resolved": False}
+    match_cov: Optional[float] = None
     if doi:
         meta = ingest.resolve_doi(doi)
     elif raw:
-        cands = ingest.search_works(raw, rows=3)
-        if cands and cands[0].get("doi") and _title_sim(raw, cands[0].get("title", "")) >= _RESOLVE_SIM:
-            doi = cands[0]["doi"]
+        # Pick the search hit whose title is best covered by the citation text
+        # (robust to authors/year/journal noise that full-string similarity hurts on).
+        best, best_cov = None, 0.0
+        for c in ingest.search_works(raw, rows=5):
+            cov = _title_coverage(raw, c.get("title", ""))
+            if cov > best_cov:
+                best_cov, best = cov, c
+        if best and best.get("doi") and best_cov >= _COVERAGE_MIN:
+            doi = best["doi"]
             meta = ingest.resolve_doi(doi)
+            match_cov = best_cov
     resolved = bool(meta.get("resolved"))
     title = meta.get("title", "") if resolved else ""
-    title_similarity: Optional[float] = None
-    if resolved and raw and not ingest._DOI_RE.search(raw):
-        title_similarity = round(_title_sim(raw, title), 3)
+    title_similarity: Optional[float] = round(match_cov, 3) if (resolved and match_cov is not None) else None
     return {
         "resolved": resolved, "doi": meta.get("doi", doi) if resolved else doi, "title": title,
         "year": meta.get("year") if resolved else None, "authors": meta.get("authors", "") if resolved else "",
@@ -233,10 +262,16 @@ def check_reference(index: int, doi: str, raw: str, claim: str, model: Any,
         issues.append({"code": code, "label": label, "severity": sev, "detail": detail})
 
     if not res["resolved"]:
-        kind = "DOI" if (doi or ingest.detect_doi(raw or "")) else "citation"
-        add("unresolved", "Could not be resolved", "high",
-            f"No matching record was found in Crossref or OpenAlex for this {kind}. The reference may be "
-            f"fabricated, contain a typo, or be too obscure to be indexed — verify it by hand before relying on it.")
+        if _is_grey_lit(raw) and not (doi or ingest.detect_doi(raw or "")):
+            add("unindexed", "Non-indexed source (couldn't auto-verify)", "low",
+                "This looks like a website, report, press release, or other grey-literature source that isn't "
+                "indexed in Crossref or OpenAlex, so it can't be auto-verified. Check the link/source manually — "
+                "this is common for legitimate citations and isn't itself a red flag.")
+        else:
+            kind = "DOI" if (doi or ingest.detect_doi(raw or "")) else "citation"
+            add("unresolved", "Could not be resolved", "high",
+                f"No matching record was found in Crossref or OpenAlex for this {kind}. The reference may be "
+                f"fabricated, contain a typo, or be too obscure to be indexed — verify it by hand before relying on it.")
     if res["retracted"]:
         add("retracted", "Cited work is retracted", "high",
             "OpenAlex/Crossref marks this work as retracted. Any conclusion that rests on it should be "
