@@ -10,7 +10,7 @@ import { Input } from "../components/ui/input";
 import { Badge } from "../components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../components/ui/tabs";
 import {
-  Upload, FileText, Hash, Search, Globe, Loader2, ExternalLink, Ban, X, ChevronDown, ChevronRight, FileQuestion,
+  Upload, FileText, Hash, Search, Globe, Loader2, ExternalLink, Ban, X, FileQuestion,
 } from "lucide-react";
 import { useStore } from "../lib/store";
 import { IngestService, apiConfig, type IngestCandidate, type PaperUnderAudit } from "../lib/apiClient";
@@ -213,8 +213,6 @@ function SearchTab({ busy, setBusy, setError, onPick }: {
 // ── paper under audit panel ─────────────────────────────────────────────────
 
 function PaperPanel({ paper, onClear }: { paper: PaperUnderAudit; onClear: () => void }) {
-  const [showText, setShowText] = useState(false);
-  const [showPdf, setShowPdf] = useState(false);
   return (
     <Card className="p-5 space-y-4">
       <div className="flex items-start justify-between gap-3">
@@ -277,43 +275,45 @@ function PaperPanel({ paper, onClear }: { paper: PaperUnderAudit; onClear: () =>
         </div>
       )}
 
-      {/* Associated PDF */}
-      {paper.has_pdf && (
-        <div>
-          <button onClick={() => setShowPdf((v) => !v)} className="flex items-center gap-1 text-sm font-medium">
-            {showPdf ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
-            PDF
-            <a
-              href={`${apiConfig.baseUrl}/ingest/pdf-file?id=${encodeURIComponent(paper.id)}`}
-              target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}
-              className="ml-2 text-xs text-primary hover:underline inline-flex items-center gap-1"
-            >
-              open in new tab <ExternalLink className="size-3" />
-            </a>
-          </button>
-          {showPdf && (
-            <iframe
-              title="Associated PDF"
-              src={`${apiConfig.baseUrl}/ingest/pdf-file?id=${encodeURIComponent(paper.id)}`}
-              className="mt-2 w-full h-[800px] rounded border bg-muted/30"
-            />
-          )}
-        </div>
-      )}
+      {/* Preview — full text in one tab, PDF in another */}
+      {(paper.has_full_text || paper.has_pdf) && (
+        <Tabs defaultValue={paper.has_pdf ? "pdf" : "fulltext"}>
+          <TabsList>
+            {paper.has_full_text && (
+              <TabsTrigger value="fulltext">
+                Full text <span className="text-muted-foreground ml-1">({paper.char_count.toLocaleString()})</span>
+              </TabsTrigger>
+            )}
+            {paper.has_pdf && <TabsTrigger value="pdf">PDF</TabsTrigger>}
+          </TabsList>
 
-      {/* Full text (complete, scrollable) */}
-      {paper.has_full_text && (
-        <div>
-          <button onClick={() => setShowText((v) => !v)} className="flex items-center gap-1 text-sm font-medium">
-            {showText ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
-            Full text <span className="text-xs text-muted-foreground ml-1">({paper.char_count.toLocaleString()} chars)</span>
-          </button>
-          {showText && (
-            <pre className="mt-2 max-h-[600px] overflow-auto text-[11px] whitespace-pre-wrap bg-muted/50 rounded p-3 leading-relaxed">
-              {paper.full_text}
-            </pre>
+          {paper.has_full_text && (
+            <TabsContent value="fulltext">
+              <pre className="max-h-[800px] overflow-auto text-[11px] whitespace-pre-wrap bg-muted/50 rounded p-3 leading-relaxed">
+                {paper.full_text}
+              </pre>
+            </TabsContent>
           )}
-        </div>
+
+          {paper.has_pdf && (
+            <TabsContent value="pdf">
+              <div className="flex justify-end mb-2">
+                <a
+                  href={`${apiConfig.baseUrl}/ingest/pdf-file?id=${encodeURIComponent(paper.id)}`}
+                  target="_blank" rel="noreferrer"
+                  className="text-xs text-primary hover:underline inline-flex items-center gap-1"
+                >
+                  open in new tab <ExternalLink className="size-3" />
+                </a>
+              </div>
+              <iframe
+                title="Associated PDF"
+                src={`${apiConfig.baseUrl}/ingest/pdf-file?id=${encodeURIComponent(paper.id)}`}
+                className="w-full h-[800px] rounded border bg-muted/30"
+              />
+            </TabsContent>
+          )}
+        </Tabs>
       )}
     </Card>
   );
