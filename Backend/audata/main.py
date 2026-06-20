@@ -22,7 +22,7 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from . import settings, ingest, browserbase_fetch, storage
+from . import settings, ingest, browserbase_fetch, storage, fulltext
 
 app = FastAPI(title="AuData API", version="0.1.0")
 
@@ -133,16 +133,15 @@ def ingest_fetch(req: IngestFetchRequest):
     meta = ingest.resolve_doi(doi) if doi else {"resolved": False}
     url = (meta.get("url") if meta.get("resolved") else "") or (req.url or "") or (f"https://doi.org/{doi}" if doi else "")
 
+    # Tier A — direct open-access APIs (Europe PMC XML, PMC PDF, Unpaywall, arXiv).
     full_text, ft_source = "", ""
-    if doi:
+    if doi or url:
         try:
-            pdf = ingest.fetch_unpaywall_pdf(doi)
-            if pdf:
-                t = ingest.extract_text_from_pdf(pdf)
-                if t and len(t) > 400:
-                    full_text, ft_source = t, "Unpaywall PDF"
+            full_text, ft_source = fulltext.fetch_full_text(
+                doi=doi, url=url, title=(meta.get("title") if meta.get("resolved") else "") or title)
         except Exception as e:
-            print(f"[audata unpaywall] {e}")
+            print(f"[audata fulltext ladder] {e}")
+    # Tier B — Browserbase fallback for anything the OA ladder can't reach.
     bb_info: Dict[str, Any] = {}
     if not full_text and req.use_browserbase and url and browserbase_fetch.available():
         full_text, ft_source, bb_info = _full_text_via_browserbase(url)
@@ -175,6 +174,12 @@ def ingest_url(req: IngestUrlRequest):
         raise HTTPException(status_code=502, detail=f"Browserbase fetch failed: {bb_info.get('reason', 'unknown')}")
     doi = ingest.detect_doi(full_text[:4000]) or ingest.detect_doi(bb_info.get("final_url", ""))
     meta = ingest.resolve_doi(doi) if doi else {"resolved": False}
+    # If the page yielded a DOI, the open-access ladder usually beats scraped
+    # landing-page text (which is mostly cookie banner + nav). Prefer it.
+    if doi:
+        oa_text, oa_src = fulltext.fetch_full_text(doi=doi, url=bb_info.get("final_url", url))
+        if oa_text and len(oa_text) > len(full_text):
+            full_text, ft_source = oa_text, oa_src
     paper = ingest._build_paper(
         source="url", ident=doi or url,
         title=(meta.get("title") if meta.get("resolved") else "") or bb_info.get("title", "") or url,
