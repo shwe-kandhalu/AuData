@@ -956,12 +956,14 @@ export const IngestService = {
   },
 
   async fetch(
-    opts: { doi?: string; title?: string; url?: string; useBrowserbase?: boolean },
+    opts: { doi?: string; title?: string; url?: string; useOpenAccess?: boolean; useBrowserbase?: boolean },
     signal?: AbortSignal,
   ): Promise<{ paper: PaperUnderAudit; resolved: boolean; browserbase?: any }> {
     return postJSON("/ingest/fetch", {
       doi: opts.doi || "", title: opts.title || "", url: opts.url || "",
-      use_browserbase: opts.useBrowserbase !== false, session_id: clientSessionId(),
+      use_open_access: opts.useOpenAccess !== false,
+      use_browserbase: opts.useBrowserbase !== false,
+      session_id: clientSessionId(),
     }, signal);
   },
 

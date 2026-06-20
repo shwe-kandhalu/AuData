@@ -71,7 +71,8 @@ class IngestFetchRequest(BaseModel):
     doi: Optional[str] = ""
     title: Optional[str] = ""
     url: Optional[str] = ""
-    use_browserbase: bool = True
+    use_open_access: bool = True   # Europe PMC / PMC / Unpaywall / arXiv ladder
+    use_browserbase: bool = True   # headless-browser fallback for any URL
     session_id: Optional[str] = ""
 
 
@@ -135,7 +136,7 @@ def ingest_fetch(req: IngestFetchRequest):
 
     # Tier A — direct open-access APIs (Europe PMC XML, PMC PDF, Unpaywall, arXiv).
     full_text, ft_source = "", ""
-    if doi or url:
+    if req.use_open_access and (doi or url):
         try:
             full_text, ft_source = fulltext.fetch_full_text(
                 doi=doi, url=url, title=(meta.get("title") if meta.get("resolved") else "") or title)
