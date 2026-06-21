@@ -74,34 +74,51 @@ def _evidence_context(paper: Dict[str, Any]) -> str:
     return "\n\n".join(parts)
 
 
+def _strip_references(body: str) -> str:
+    idx = -1
+    for kw in ("\nreferences\n", "\nbibliography\n", "\nworks cited\n"):
+        j = body.lower().rfind(kw)
+        if j > idx:
+            idx = j
+    return body[:idx] if idx > 1000 else body
+
+
 def _claims_context(paper: Dict[str, Any]) -> str:
-    secs = _sections(paper.get("full_text", "") or "")
+    full_text = paper.get("full_text", "") or ""
+    secs = _sections(full_text)
     abstract = paper.get("abstract", "") or secs.get("abstract", "")
     parts = []
     if abstract:
-        parts.append(f"ABSTRACT:\n{abstract[:2500]}")
-    for k in ("conclusion", "discussion"):
-        if secs.get(k):
-            parts.append(f"{k.upper()}:\n{secs[k][:3500]}")
-    if not parts:
-        return (paper.get("full_text", "") or abstract)[:6000]
-    return "\n\n".join(parts)
+        parts.append(f"ABSTRACT:\n{abstract[:3000]}")
+    # Where claims concentrate — results / discussion / conclusion.
+    rich = "\n\n".join(f"{k.upper()}:\n{secs[k]}" for k in ("results", "discussion", "conclusion") if secs.get(k))
+    if len(rich) > 600:
+        parts.append(rich[:15000])
+    else:
+        # Headings weren't reliably detected (e.g. editorials with custom
+        # section names) — use the whole body so no claims are missed.
+        parts.append(f"PAPER BODY:\n{_strip_references(full_text)[:16000]}")
+    return "\n\n".join(parts) if parts else full_text[:9000]
 
 
-def extract_claims(paper: Dict[str, Any], model: Any, limit: int = 10) -> List[str]:
+def extract_claims(paper: Dict[str, Any], model: Any, limit: int = 25) -> List[str]:
     if model is None:
         return []
     ctx = _claims_context(paper)
     if not ctx.strip():
         return []
-    prompt = f"""You are auditing a research paper. From the text below (its abstract and
-conclusions/discussion), list the paper's MAIN claims and conclusions — the substantive
-assertions the authors make about what they found and what it means. Capture claims about
-effects, causation, performance, superiority, and generalisable implications.
+    prompt = f"""You are auditing a research paper. From the text below, list ALL substantive
+claims and conclusions the paper makes — be comprehensive, not just the headline points.
+Include every assertion the authors make about:
+  • what they found / their results,
+  • effects, associations, causation, performance, accuracy, or superiority,
+  • recommendations or "should" statements,
+  • generalisable implications or claims about real-world impact.
 
 Output ONLY JSON: {{"claims": ["concise claim 1", "concise claim 2", ...]}}
-- {limit} items max, each a single clear sentence (verbatim phrasing where possible).
-- Skip background facts and citations of others' work — only THIS paper's own claims.
+- Up to {limit} items, each ONE clear sentence (verbatim phrasing where possible).
+- Each item must be a plain string, not an object.
+- Only THIS paper's own claims — skip background facts and others' findings it cites.
 
 TEXT:
 {ctx}"""

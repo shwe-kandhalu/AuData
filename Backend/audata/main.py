@@ -466,7 +466,7 @@ def methods_claims_stream(req: MethodsClaimsRequest):
                 event_queue.put(("done", {"summary": mc.summarize([]), "note": "No claims could be extracted from this paper."}))
                 return
             evidence = mc._evidence_context(paper)
-            with ThreadPoolExecutor(max_workers=min(6, len(claims))) as ex:
+            with ThreadPoolExecutor(max_workers=min(10, len(claims))) as ex:
                 futs = {ex.submit(mc.check_claim, i, c, evidence, model): i for i, c in enumerate(claims)}
                 for fut in as_completed(futs):
                     i = futs[fut]
