@@ -426,7 +426,7 @@ class ReferenceIntegrityRequest(BaseModel):
 
 
 def _ri_model(req: "ReferenceIntegrityRequest"):
-    return llm.get_model(llm.resolve_thinking(req.model)) if req.check_claims else None
+    return llm.get_model_for(llm.TASK_REASONING, req.model or "") if req.check_claims else None
 
 
 def _ri_check_all(refs: List["RefItem"], model, check_claims: bool) -> List[Dict[str, Any]]:
@@ -511,22 +511,26 @@ def methods_claims_stream(req: MethodsClaimsRequest):
     paper = storage.get_paper(req.paper_id)
     if not paper:
         raise HTTPException(status_code=404, detail="Paper not found. Ingest it first.")
-    model = llm.get_model(llm.resolve_thinking(req.model))
+    # Extraction → local model (cheap); assessment → reasoning model (Claude).
+    assess_model = llm.get_model_for(llm.TASK_REASONING, req.model or "")
+    extract_model = llm.get_model_for(llm.TASK_EXTRACTION) or assess_model
     event_queue: "queue.Queue[tuple]" = queue.Queue()
 
     def _run():
         results: List[Dict[str, Any]] = []
         try:
-            if model is None:
-                event_queue.put(("error", {"message": "No LLM is configured. Set a model key (e.g. ANTHROPIC_API_KEY) in Backend/.env."}))
+            if assess_model is None:
+                event_queue.put(("error", {"message": "No reasoning model is configured. Set a model key (e.g. ANTHROPIC_API_KEY) in Backend/.env."}))
                 return
-            claims = mc.extract_claims(paper, model)
+            claims = mc.extract_claims(paper, extract_model)
+            if not claims and extract_model is not assess_model:
+                claims = mc.extract_claims(paper, assess_model)  # fall back to the reasoning model
             if not claims:
                 event_queue.put(("done", {"summary": mc.summarize([]), "note": "No claims could be extracted from this paper."}))
                 return
             evidence = mc._evidence_context(paper)
             with ThreadPoolExecutor(max_workers=min(10, len(claims))) as ex:
-                futs = {ex.submit(mc.check_claim, i, c["claim"], c.get("quote", ""), evidence, model): i
+                futs = {ex.submit(mc.check_claim, i, c["claim"], c.get("quote", ""), evidence, assess_model): i
                         for i, c in enumerate(claims)}
                 for fut in as_completed(futs):
                     i = futs[fut]
@@ -587,7 +591,7 @@ def reference_integrity_check_paper_stream(req: CheckPaperRequest):
     if not paper:
         raise HTTPException(status_code=404, detail="Paper not found. Ingest it first.")
     prepared = refint.prepare_paper_references(paper)
-    model = llm.get_model(llm.resolve_thinking(req.model)) if req.check_claims else None
+    model = llm.get_model_for(llm.TASK_REASONING, req.model or "") if req.check_claims else None
     event_queue: "queue.Queue[tuple]" = queue.Queue()
 
     def _run():

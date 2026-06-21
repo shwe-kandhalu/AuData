@@ -26,8 +26,40 @@ def resolve_thinking(name: str) -> str:
     """Reasoning tasks (claim/methods analysis) must not use the screening-only
     LEADS model — route those to the capable default model instead."""
     if not name or is_screening_model(name):
-        return default_model()
+        return os.getenv("MODEL_REASONING") or default_model()
     return name
+
+
+# Task-aware model routing: heavy reasoning → Claude; cheap/structured work →
+# local models; medical figures → a vision model; embeddings → a local embedder.
+# Every model is env-overridable (e.g. MODEL_EXTRACTION=claude-sonnet-4-6).
+TASK_REASONING = "reasoning"
+TASK_EXTRACTION = "extraction"
+TASK_LIGHT = "light"
+TASK_VISION = "vision"      # image forensics (teammates)
+TASK_EMBED = "embed"
+
+_TASK_DEFAULTS = {
+    TASK_EXTRACTION: "qwen2.5:7b",     # local; LEADS/other local models also fine
+    TASK_LIGHT: "llama3.2:3b",          # trivial classification / cleanup
+    TASK_VISION: "medgemma:27b",        # medical vision (multimodal variant / qwen3-vl)
+    TASK_EMBED: "nomic-embed-text",     # feeds Redis vector search + semantic cache
+}
+
+
+def model_name_for(task: str, requested: str = "") -> str:
+    """The model name chosen for a task (before instantiation)."""
+    if task == TASK_REASONING:
+        if requested and not is_screening_model(requested):
+            return requested                       # honor an explicit capable choice
+        return os.getenv("MODEL_REASONING") or default_model()
+    env = os.getenv(f"MODEL_{task.upper()}")
+    return env or _TASK_DEFAULTS.get(task) or default_model()
+
+
+def get_model_for(task: str, requested: str = ""):
+    """Resolve + instantiate the model for a task type."""
+    return get_model(model_name_for(task, requested))
 
 
 def get_model(model_name: Optional[str] = None):
@@ -61,17 +93,37 @@ def get_model(model_name: Optional[str] = None):
         return None
 
 
-def invoke(model, prompt: str) -> str:
-    """Run a single prompt and return the text content ('' on failure)."""
+def invoke(model, prompt: str, cache: bool = True) -> str:
+    """Run a single prompt and return the text content ('' on failure).
+
+    Deterministic calls (temperature=0) are cached by (model, prompt) in Redis
+    (in-memory fallback) so re-runs and repeated references/claims are free.
+    """
     if model is None:
         return ""
+    name = getattr(model, "model", None) or getattr(model, "model_name", "") or ""
+    key = None
+    if cache:
+        import hashlib
+        from . import storage
+        key = hashlib.sha256(f"{name}\n{prompt}".encode("utf-8")).hexdigest()
+        hit = storage.cache_get(key)
+        if hit is not None:
+            return hit
     try:
         from langchain_core.messages import HumanMessage
         r = model.invoke([HumanMessage(content=prompt)])
-        return getattr(r, "content", "") or ""
+        out = getattr(r, "content", "") or ""
     except Exception as e:
         print(f"[audata.llm] invoke failed: {e}")
         return ""
+    if cache and key and out:
+        try:
+            from . import storage
+            storage.cache_set(key, out)
+        except Exception:
+            pass
+    return out
 
 
 def extract_json(text: str) -> Optional[Any]:

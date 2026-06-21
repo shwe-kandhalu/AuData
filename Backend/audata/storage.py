@@ -46,6 +46,36 @@ def _get_redis():
     return _redis
 
 
+def cache_get(key: str) -> Any:
+    """LLM response cache (Redis when available, in-memory otherwise)."""
+    full = f"audata:llmcache:{key}"
+    r = _get_redis()
+    if r:
+        try:
+            return r.get(full)
+        except Exception:
+            pass
+    tup = _mem.get(full)
+    if tup:
+        val, exp = tup
+        if exp > time.time():
+            return val
+        _mem.pop(full, None)
+    return None
+
+
+def cache_set(key: str, value: str, ttl: int = 604800) -> None:  # 7 days
+    full = f"audata:llmcache:{key}"
+    r = _get_redis()
+    if r:
+        try:
+            r.set(full, value, ex=ttl)
+            return
+        except Exception:
+            pass
+    _mem[full] = (value, time.time() + ttl)
+
+
 def redis_status() -> Dict[str, Any]:
     r = _get_redis()
     if r is None:
