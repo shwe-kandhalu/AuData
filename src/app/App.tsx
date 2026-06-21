@@ -65,8 +65,11 @@ function Shell() {
     let cancelled = false;
     AuditStore.getAll(paperId).then((a) => {
       if (cancelled) return;
+      if (a.statistical && !s.statAudits[paperId]) s.setStatAudits({ ...s.statAudits, [paperId]: a.statistical });
+      if (a.numerical && !s.numericalAudits[paperId]) s.setNumericalAudits({ ...s.numericalAudits, [paperId]: a.numerical });
       if (a.references && !s.refAudits[paperId]) s.setRefAudits({ ...s.refAudits, [paperId]: a.references });
       if (a.methods && !s.methodsAudits[paperId]) s.setMethodsAudits({ ...s.methodsAudits, [paperId]: a.methods });
+      if (a.images && !s.imageAudits[paperId]) s.setImageAudits({ ...s.imageAudits, [paperId]: a.images });
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps

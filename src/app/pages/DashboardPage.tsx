@@ -21,13 +21,11 @@ export function DashboardPage() {
   const key = paper?.id || "";
 
   const built: Built[] = [
-    { page: "recompute", label: "Statistical Recompute", icon: Calculator, audit: null },
+    { page: "recompute", label: "Statistical Recompute", icon: Calculator, audit: s.statAudits[key] },
+    { page: "numerical", label: "Numerical Consistency", icon: Hash, audit: s.numericalAudits[key] },
+    { page: "imaging", label: "Image Forensics", icon: ImageIcon, audit: s.imageAudits[key] },
     { page: "references", label: "Reference Integrity", icon: BookMarked, audit: s.refAudits[key] },
     { page: "methods", label: "Methods ↔ Claims", icon: GitCompare, audit: s.methodsAudits[key] },
-  ];
-  const comingSoon: { label: string; icon: any }[] = [
-    { label: "Numerical Consistency", icon: Hash },
-    { label: "Image Forensics", icon: ImageIcon },
   ];
 
   const totalFlagged = built.reduce((n, b) => n + (b.audit?.summary?.flagged ?? 0), 0);
@@ -101,15 +99,6 @@ export function DashboardPage() {
                 <div className="mt-2 text-xs text-muted-foreground">Not run yet — click to run</div>
               )}
             </button>
-          );
-        })}
-        {comingSoon.map((c) => {
-          const Icon = c.icon;
-          return (
-            <div key={c.label} className="rounded-lg border border-dashed p-4 opacity-60">
-              <div className="flex items-center gap-2"><Icon className="size-4 text-muted-foreground" /><span className="text-sm font-medium">{c.label}</span></div>
-              <div className="mt-2 text-xs text-muted-foreground">Coming soon</div>
-            </div>
           );
         })}
       </div>

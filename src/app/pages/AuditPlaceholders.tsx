@@ -18,6 +18,7 @@ import {
   AlertTriangle, CheckCircle2, XCircle, Loader2, Sparkles, Play, Hash, Database, Quote,
 } from "lucide-react";
 import { useStore } from "../lib/store";
+import { AuditStore } from "../lib/apiClient";
 
 type Stage = "Ingest" | "Detect" | "Reliability" | "Report" | "Manage";
 
@@ -262,7 +263,9 @@ function extractJson(text: string): string {
 }
 
 export function NumericalPage() {
-  const { paperUnderAudit: paper, setPage } = useStore();
+  const store = useStore();
+  const { paperUnderAudit: paper, setPage } = store;
+  const auditKey = paper?.id || "__none__";
   const comparisonRef = useRef<HTMLDivElement>(null);
   // ── paper text (auto-fills from ingested paper) ──────────────────────
   const [paperText, setPaperText] = useState("");
@@ -345,7 +348,9 @@ If a category has no numbers to check, say so in the summary. flags array may be
       const summaries: Record<string, string> = parsed.summaries ?? {};
       setConsistencyFlags(flags);
       setConsistencySummaries(summaries);
-      setConsistencyMsg(flags.length === 0 ? "No internal inconsistencies found." : `${flags.length} issue${flags.length !== 1 ? "s" : ""} found.`);
+      const message = flags.length === 0 ? "No internal inconsistencies found." : `${flags.length} issue${flags.length !== 1 ? "s" : ""} found.`;
+      setConsistencyMsg(message);
+      persistNumerical({ consistencyFlags: flags, consistencySummaries: summaries, consistencyMsg: message });
     } catch (e: any) {
       setConsistencyMsg(`Error: ${e.message}`);
     } finally {
@@ -443,9 +448,11 @@ ${paperText.slice(0, 20000)}
         failures     > 0 ? `⚠ ${failures} inconsistent`           : "",
         unverifiable > 0 ? `${unverifiable} couldn't be verified` : "",
       ].filter(Boolean).join(", ");
-      setQualMsg(claims.length === 0
+      const message = claims.length === 0
         ? "No checkable qualitative claims found."
-        : `Found ${claims.length} claim${claims.length !== 1 ? "s" : ""}: ${parts}.`);
+        : `Found ${claims.length} claim${claims.length !== 1 ? "s" : ""}: ${parts}.`;
+      setQualMsg(message);
+      persistNumerical({ qualClaims: claims, qualMsg: message });
     } catch (e: any) {
       setQualMsg(`Error: ${e.message}`);
     } finally {
@@ -482,6 +489,72 @@ ${paperText.slice(0, 20000)}
   const [datasetComparison, setDatasetComparison] = useState<{ file: DatasetFile; result: ComparisonResult } | null>(null);
   const [comparingDataset, setComparingDataset] = useState(false);
 
+  type NumericalAuditPatch = Partial<{
+    consistencyFlags: RecFlag[] | null;
+    consistencySummaries: Record<string, string>;
+    consistencyMsg: string;
+    qualClaims: QualClaim[];
+    qualMsg: string;
+    datasetResult: DatasetResult | null;
+    datasetMsg: string;
+    datasetComparison: { file: DatasetFile; result: ComparisonResult } | null;
+  }>;
+
+  function numericalSummary(patch: NumericalAuditPatch = {}) {
+    const nextConsistencyFlags = patch.consistencyFlags !== undefined ? patch.consistencyFlags : consistencyFlags;
+    const nextQualClaims = patch.qualClaims !== undefined ? patch.qualClaims : qualClaims;
+    const nextDatasetResult = patch.datasetResult !== undefined ? patch.datasetResult : datasetResult;
+    const nextDatasetComparison = patch.datasetComparison !== undefined ? patch.datasetComparison : datasetComparison;
+    let total = 0;
+    let flagged = 0;
+
+    if (nextConsistencyFlags !== null) {
+      total += CONSISTENCY_STEPS.length;
+      flagged += nextConsistencyFlags.length;
+    }
+    if (nextQualClaims.length > 0 || patch.qualMsg || qualMsg) {
+      total += Math.max(nextQualClaims.length, 1);
+      flagged += nextQualClaims.filter((claim) => claim.pass === false).length;
+    }
+    if (nextDatasetResult) {
+      total += 1;
+      if (nextDatasetResult.flag) flagged += 1;
+    }
+    if (nextDatasetComparison) {
+      total += Math.max(nextDatasetComparison.result.matches.length + nextDatasetComparison.result.discrepancies.length + nextDatasetComparison.result.unverifiable.length, 1);
+      flagged += nextDatasetComparison.result.discrepancies.length;
+    }
+
+    return { total, flagged };
+  }
+
+  function persistNumerical(patch: NumericalAuditPatch) {
+    if (!paper || auditKey === "__none__") return;
+    const prev = store.numericalAudits[auditKey] || {};
+    const entry = {
+      ...prev,
+      ...patch,
+      summary: numericalSummary(patch),
+      ranAt: Date.now(),
+    };
+    store.setNumericalAudits({ ...store.numericalAudits, [auditKey]: entry });
+    AuditStore.save(auditKey, "numerical", entry);
+  }
+
+  useEffect(() => {
+    const saved = store.numericalAudits[auditKey];
+    if (!saved) return;
+    setConsistencyFlags(saved.consistencyFlags ?? null);
+    setConsistencySummaries(saved.consistencySummaries ?? {});
+    setConsistencyMsg(saved.consistencyMsg ?? "");
+    setQualClaims(saved.qualClaims ?? []);
+    setQualMsg(saved.qualMsg ?? "");
+    setDatasetResult(saved.datasetResult ?? null);
+    setDatasetMsg(saved.datasetMsg ?? "");
+    setDatasetComparison(saved.datasetComparison ?? null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auditKey]);
+
   async function findDataset() {
     if (!paperText.trim()) { setDatasetMsg("No paper text loaded."); return; }
     setDatasetBusy(true); setDatasetMsg("Scanning paper for dataset links…"); setDatasetResult(null); setDatasetComparison(null);
@@ -497,13 +570,16 @@ ${paperText.slice(0, 20000)}
       }
       const result: DatasetResult = await res.json();
       setDatasetResult(result);
-      if (result.flag === "no_public_dataset") setDatasetMsg("No public dataset found — the paper does not link to any repository.");
-      else if (result.flag === "browserbase_unavailable") setDatasetMsg("Dataset link found but Browserbase is not configured.");
-      else if (result.flag === "no_data_files_found") setDatasetMsg("Repository found but no downloadable data files (CSV/XLSX) detected on the page.");
+      let message = "";
+      if (result.flag === "no_public_dataset") message = "No public dataset found — the paper does not link to any repository.";
+      else if (result.flag === "browserbase_unavailable") message = "Dataset link found but Browserbase is not configured.";
+      else if (result.flag === "no_data_files_found") message = "Repository found but no downloadable data files (CSV/XLSX) detected on the page.";
       else if (result.has_dataset) {
         const totalFiles = result.datasets.reduce((s, d) => s + d.files.length, 0);
-        setDatasetMsg(`Found ${result.links.length} repository link${result.links.length !== 1 ? "s" : ""}. ${totalFiles > 0 ? `${totalFiles} data file${totalFiles !== 1 ? "s" : ""} downloaded and summarized.` : "No data files could be downloaded."}`);
+        message = `Found ${result.links.length} repository link${result.links.length !== 1 ? "s" : ""}. ${totalFiles > 0 ? `${totalFiles} data file${totalFiles !== 1 ? "s" : ""} downloaded and summarized.` : "No data files could be downloaded."}`;
       }
+      setDatasetMsg(message);
+      persistNumerical({ datasetResult: result, datasetMsg: message });
     } catch (e: any) {
       setDatasetMsg(`Error: ${e.message}`);
     } finally {
@@ -559,7 +635,9 @@ Return ONLY valid JSON (no markdown, no preamble):
       const data = await res.json() as any;
       const text = data.content?.find((b: any) => b.type === "text")?.text ?? "{}";
       const parsed: ComparisonResult = JSON.parse(extractJson(text));
-      setDatasetComparison({ file, result: parsed });
+      const comparison = { file, result: parsed };
+      setDatasetComparison(comparison);
+      persistNumerical({ datasetComparison: comparison });
       setTimeout(() => comparisonRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
     } catch (e: any) {
       setDatasetMsg(`Comparison error: ${e.message}`);

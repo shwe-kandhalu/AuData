@@ -33,8 +33,11 @@ export function AuditsPage() {
       // Load every stage's saved results (from Redis/SQLite) so each tab opens
       // populated for this paper.
       const audits = await AuditStore.getAll(id);
+      if (audits.statistical) s.setStatAudits({ ...s.statAudits, [id]: audits.statistical });
+      if (audits.numerical) s.setNumericalAudits({ ...s.numericalAudits, [id]: audits.numerical });
       if (audits.references) s.setRefAudits({ ...s.refAudits, [id]: audits.references });
       if (audits.methods) s.setMethodsAudits({ ...s.methodsAudits, [id]: audits.methods });
+      if (audits.images) s.setImageAudits({ ...s.imageAudits, [id]: audits.images });
       s.setPage("dashboard");
     } finally { setOpening(null); }
   }
@@ -43,9 +46,15 @@ export function AuditsPage() {
     !filter.trim() || (p.title || "").toLowerCase().includes(filter.toLowerCase()) || (p.id || "").toLowerCase().includes(filter.toLowerCase()));
 
   function flags(id: string) {
+    const stat = s.statAudits[id]?.summary?.flagged;
+    const num = s.numericalAudits[id]?.summary?.flagged;
     const ref = s.refAudits[id]?.summary?.flagged;
     const mc = s.methodsAudits[id]?.summary?.flagged;
+    const img = s.imageAudits[id]?.summary?.flagged;
     const out: string[] = [];
+    if (typeof stat === "number") out.push(`${stat} stat`);
+    if (typeof num === "number") out.push(`${num} num`);
+    if (typeof img === "number") out.push(`${img} image`);
     if (typeof ref === "number") out.push(`${ref} ref`);
     if (typeof mc === "number") out.push(`${mc} claim`);
     return out;

@@ -1,10 +1,10 @@
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { AlertCircle, Calculator, CheckCircle2, FileInput, Play, XCircle } from "lucide-react";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { useStore } from "../lib/store";
-import { StatisticalAuditService, apiConfig, type StatisticalFinding, type StatisticalRecomputeResult } from "../lib/apiClient";
+import { AuditStore, StatisticalAuditService, apiConfig, type StatisticalFinding, type StatisticalRecomputeResult } from "../lib/apiClient";
 
 function fmtP(value: number) {
   if (!Number.isFinite(value)) return "n/a";
@@ -74,13 +74,26 @@ export function RecomputePage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<StatisticalRecomputeResult | null>(null);
+  const auditKey = paper?.id || "__none__";
+
+  useEffect(() => {
+    setResult(store.statAudits[auditKey]?.result || null);
+  }, [auditKey, store.statAudits]);
 
   async function runAudit() {
     if (!paper) return;
     setBusy(true);
     setError("");
     try {
-      setResult(await StatisticalAuditService.recompute(paper));
+      const auditResult = await StatisticalAuditService.recompute(paper);
+      setResult(auditResult);
+      const entry = {
+        result: auditResult,
+        summary: { total: auditResult.claim_count, flagged: auditResult.mismatch_count },
+        ranAt: Date.now(),
+      };
+      store.setStatAudits({ ...store.statAudits, [paper.id]: entry });
+      AuditStore.save(paper.id, "statistical", entry);
     } catch (e: any) {
       setError(e?.message || "Statistical recompute failed.");
     } finally {
