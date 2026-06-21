@@ -957,6 +957,26 @@ export type AuditListItem = {
   tables_detected?: number; figures_detected?: number;
 };
 
+// Per-paper detection results, stored server-side (Redis + SQLite) so opening an
+// audit restores every stage's results regardless of browser/session.
+export const AuditStore = {
+  async save(paperId: string, stage: string, data: any): Promise<void> {
+    try {
+      await fetch(`${apiConfig.baseUrl}/paper-audit`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paper_id: paperId, stage, data }),
+      });
+    } catch { /* best-effort */ }
+  },
+  async getAll(paperId: string): Promise<Record<string, any>> {
+    try {
+      const r = await fetch(`${apiConfig.baseUrl}/paper-audits?paper_id=${encodeURIComponent(paperId)}`);
+      if (!r.ok) return {};
+      return (await r.json()).audits || {};
+    } catch { return {}; }
+  },
+};
+
 export const AuditsService = {
   async list(signal?: AbortSignal): Promise<AuditListItem[]> {
     try {

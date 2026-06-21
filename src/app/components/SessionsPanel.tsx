@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore, SESSION_STORAGE_KEY } from "../lib/store";
-import { listSessions, loadSession, saveSession, deleteSession, SessionMeta } from "../lib/sessions";
+import { listSessions, loadSession, saveSession, deleteSession, renameSession, SessionMeta } from "../lib/sessions";
 import { AIService } from "../lib/mockServices";
 import { Card } from "./ui/card";
 import { Button } from "./ui/button";
 import { Label } from "./ui/label";
-import { Plus, FolderOpen, Trash2, Cloud, CloudOff, Loader2, Check } from "lucide-react";
+import { Plus, FolderOpen, Trash2, Pencil, Cloud, CloudOff, Loader2, Check } from "lucide-react";
 import { toast } from "sonner";
 
 function genId() {
@@ -104,6 +104,19 @@ export function SessionsPanel() {
       if (s.currentSessionId === id) s.reset();
       refresh();
     } catch (e: any) { toast.error(e.message || "Delete failed"); }
+  }
+
+  async function onRename(id: string, current: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    const name = window.prompt("Rename session", current);
+    if (name == null) return;
+    const title = name.trim();
+    if (!title || title === current) return;
+    try {
+      await renameSession(id, title);
+      if (s.currentSessionId === id) s.setCurrentSessionTitle(title);
+      refresh();
+    } catch (e: any) { toast.error(e.message || "Rename failed"); }
   }
 
   // Pick a session title: explicit title › paper under audit › PICO goal.
@@ -234,7 +247,11 @@ export function SessionsPanel() {
               onClick={() => onLoad(m.id)}>
               <FolderOpen className="size-3 shrink-0 text-muted-foreground" />
               <div className="flex-1 truncate">{m.title}</div>
-              <button onClick={(e) => onDelete(m.id, e)}
+              <button onClick={(e) => onRename(m.id, m.title, e)} title="Rename"
+                className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground">
+                <Pencil className="size-3" />
+              </button>
+              <button onClick={(e) => onDelete(m.id, e)} title="Delete"
                 className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive">
                 <Trash2 className="size-3" />
               </button>

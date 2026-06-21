@@ -35,3 +35,6 @@ export async function saveSession(id: string, title: string, data: SessionData) 
 export async function deleteSession(id: string) {
   await af(`/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
+export async function renameSession(id: string, title: string) {
+  await af(`/sessions/${encodeURIComponent(id)}/title`, { method: "PATCH", body: JSON.stringify({ title }) });
+}

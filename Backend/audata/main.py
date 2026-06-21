@@ -380,6 +380,37 @@ def session_delete(session_id: str):
     return {"ok": True}
 
 
+class RenameRequest(BaseModel):
+    title: str
+
+
+@app.patch("/api/sessions/{session_id}/title")
+def session_rename(session_id: str, req: RenameRequest):
+    ok = storage.rename_session(session_id, req.title)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    return {"ok": True}
+
+
+# ── per-paper detection audits (Redis + SQLite, keyed by paper id) ─────────────
+
+class PaperAuditSave(BaseModel):
+    paper_id: str
+    stage: str
+    data: Any = None
+
+
+@app.put("/api/paper-audit")
+def paper_audit_save(req: PaperAuditSave):
+    storage.save_paper_audit(req.paper_id, req.stage, req.data)
+    return {"ok": True}
+
+
+@app.get("/api/paper-audits")
+def paper_audits_get(paper_id: str):
+    return {"audits": storage.get_paper_audits(paper_id)}
+
+
 # ── Reference Integrity (Detect) ──────────────────────────────────────────────
 
 class RefItem(BaseModel):

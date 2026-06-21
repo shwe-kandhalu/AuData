@@ -18,10 +18,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/
 import { PdfHighlightViewer } from "../components/PdfHighlightViewer";
 import { useStore } from "../lib/store";
 import {
-  ReferenceIntegrityService, SessionStore, apiConfig, type RefInput, type RefResult, type RefSummary, type RefMetrics, type RefSeverity,
+  ReferenceIntegrityService, AuditStore, apiConfig, type RefInput, type RefResult, type RefSummary, type RefMetrics, type RefSeverity,
 } from "../lib/apiClient";
-
-const REF_AUDITS_KEY = "ref_audits";
 
 const SEV_STYLE: Record<RefSeverity, string> = {
   high: "bg-red-500/10 text-red-600 border-red-500/30",
@@ -108,36 +106,35 @@ export function ReferenceIntegrityPage() {
   // switches and refresh (the store autosaves to localStorage + the session).
   const auditKey = paper?.id || "__manual__";
   useEffect(() => {
-    const a = s.refAudits[auditKey];
-    if (a) {
-      setResults(a.results || []); setSummary(a.summary || null); setMetrics(a.metrics || null);
-      setDecisions(a.decisions || {});
-      setSelected((a.results || []).find((x: RefResult) => x.status === "flagged")?.index ?? (a.results || [])[0]?.index ?? null);
-    } else {
-      setResults([]); setSummary(null); setMetrics(null); setDecisions({}); setSelected(null);
-    }
+    let cancelled = false;
+    const apply = (a: any) => {
+      if (cancelled) return;
+      if (a) {
+        setResults(a.results || []); setSummary(a.summary || null); setMetrics(a.metrics || null);
+        setDecisions(a.decisions || {});
+        setSelected((a.results || []).find((x: RefResult) => x.status === "flagged")?.index ?? (a.results || [])[0]?.index ?? null);
+      } else { setResults([]); setSummary(null); setMetrics(null); setDecisions({}); setSelected(null); }
+    };
+    const local = s.refAudits[auditKey];
+    if (local) { apply(local); }
+    else if (paper) {
+      apply(null);
+      // Not in the local store — pull this paper's saved results from the server (Redis).
+      AuditStore.getAll(paper.id).then((audits) => {
+        if (cancelled || !audits.references) return;
+        s.setRefAudits({ ...s.refAudits, [auditKey]: audits.references });
+        apply(audits.references);
+      });
+    } else { apply(null); }
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auditKey]);
 
-  // Restore audits cached in Redis once on mount (localStorage already restored
-  // them client-side; this also covers a cleared cache / another tab).
-  const redisRestored = useRef(false);
-  useEffect(() => {
-    if (redisRestored.current) return;
-    redisRestored.current = true;
-    SessionStore.get(REF_AUDITS_KEY).then((remote) => {
-      if (remote && typeof remote === "object") {
-        s.setRefAudits({ ...remote, ...s.refAudits }); // local takes precedence, Redis fills gaps
-      }
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   function persist(patch: Partial<{ results: RefResult[]; summary: RefSummary | null; metrics: RefMetrics | null; decisions: Record<number, Decision> }>) {
     const prev = s.refAudits[auditKey] || {};
-    const nextMap = { ...s.refAudits, [auditKey]: { ...prev, ...patch, ranAt: Date.now() } };
-    s.setRefAudits(nextMap);                 // store → localStorage + AuData session
-    SessionStore.set(REF_AUDITS_KEY, nextMap); // → Redis (short-term, server-side)
+    const entry = { ...prev, ...patch, ranAt: Date.now() };
+    s.setRefAudits({ ...s.refAudits, [auditKey]: entry });   // store → localStorage
+    if (auditKey !== "__manual__") AuditStore.save(auditKey, "references", entry); // → Redis + SQLite (per paper)
   }
 
   function setDecision(index: number, d: Decision) {

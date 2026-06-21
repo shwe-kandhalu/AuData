@@ -114,6 +114,9 @@ def init_db() -> None:
         # Raw PDF bytes for the paper under audit, so the UI can render it.
         c.execute("""CREATE TABLE IF NOT EXISTS pdfs (
             paper_id TEXT PRIMARY KEY, bytes BLOB, created_at REAL)""")
+        # Per-paper detection results, keyed by (paper, stage).
+        c.execute("""CREATE TABLE IF NOT EXISTS paper_audits (
+            paper_id TEXT, stage TEXT, data TEXT, updated_at REAL, PRIMARY KEY(paper_id, stage))""")
 
 
 def save_paper(paper: Dict[str, Any]) -> str:
@@ -196,6 +199,73 @@ def get_session(session_id: str) -> Optional[Dict[str, Any]]:
 def delete_session(session_id: str) -> None:
     with _db_lock, _conn() as c:
         c.execute("DELETE FROM sessions WHERE session_id=?", (session_id,))
+
+
+def rename_session(session_id: str, title: str) -> bool:
+    """Update only a session's title, preserving its data/timestamps."""
+    with _db_lock, _conn() as c:
+        row = c.execute("SELECT data FROM sessions WHERE session_id=?", (session_id,)).fetchone()
+        if not row:
+            return False
+        try:
+            rec = json.loads(row["data"])
+        except Exception:
+            rec = {}
+        rec["title"] = title or "Untitled session"
+        c.execute("UPDATE sessions SET data=?, updated_at=? WHERE session_id=?",
+                  (json.dumps(rec), time.time(), session_id))
+    return True
+
+
+# ── per-paper detection audits (stored in Redis + SQLite, keyed by paper) ──────
+
+_AUDIT_STAGES = ("references", "methods", "numerical", "recompute", "imaging")
+
+
+def save_paper_audit(paper_id: str, stage: str, data: Any) -> None:
+    if not paper_id or not stage:
+        return
+    blob = json.dumps(data)
+    now = time.time()
+    with _db_lock, _conn() as c:
+        c.execute("""CREATE TABLE IF NOT EXISTS paper_audits (
+            paper_id TEXT, stage TEXT, data TEXT, updated_at REAL, PRIMARY KEY(paper_id, stage))""")
+        c.execute("""INSERT INTO paper_audits (paper_id, stage, data, updated_at) VALUES (?,?,?,?)
+                     ON CONFLICT(paper_id, stage) DO UPDATE SET data=excluded.data, updated_at=excluded.updated_at""",
+                  (paper_id, stage, blob, now))
+    r = _get_redis()
+    if r:
+        try:
+            r.set(f"audata:audit:{paper_id}:{stage}", blob)  # persistent (no TTL)
+        except Exception as e:
+            print(f"[audata.storage] redis save_paper_audit: {e}")
+
+
+def get_paper_audits(paper_id: str) -> Dict[str, Any]:
+    """All detection-stage results for a paper — Redis first, SQLite fallback."""
+    out: Dict[str, Any] = {}
+    r = _get_redis()
+    if r:
+        try:
+            for st in _AUDIT_STAGES:
+                v = r.get(f"audata:audit:{paper_id}:{st}")
+                if v:
+                    out[st] = json.loads(v)
+            if out:
+                return out
+        except Exception as e:
+            print(f"[audata.storage] redis get_paper_audits: {e}")
+    with _db_lock, _conn() as c:
+        try:
+            rows = c.execute("SELECT stage, data FROM paper_audits WHERE paper_id=?", (paper_id,)).fetchall()
+        except sqlite3.OperationalError:
+            return out
+    for row in rows:
+        try:
+            out[row["stage"]] = json.loads(row["data"])
+        except Exception:
+            pass
+    return out
 
 
 def save_pdf(paper_id: str, data: bytes) -> None:

@@ -8,7 +8,7 @@ import { Badge } from "../components/ui/badge";
 import { Input } from "../components/ui/input";
 import { FolderOpen, Upload, Loader2, RefreshCw, Ban, Check, Search, FileText } from "lucide-react";
 import { useStore } from "../lib/store";
-import { AuditsService, type AuditListItem } from "../lib/apiClient";
+import { AuditsService, AuditStore, type AuditListItem } from "../lib/apiClient";
 
 export function AuditsPage() {
   const s = useStore();
@@ -28,7 +28,14 @@ export function AuditsPage() {
     setOpening(id);
     try {
       const paper = await AuditsService.getPaper(id);
-      if (paper) { s.setPaperUnderAudit(paper); s.setPage("dashboard"); }
+      if (!paper) return;
+      s.setPaperUnderAudit(paper);
+      // Load every stage's saved results (from Redis/SQLite) so each tab opens
+      // populated for this paper.
+      const audits = await AuditStore.getAll(id);
+      if (audits.references) s.setRefAudits({ ...s.refAudits, [id]: audits.references });
+      if (audits.methods) s.setMethodsAudits({ ...s.methodsAudits, [id]: audits.methods });
+      s.setPage("dashboard");
     } finally { setOpening(null); }
   }
 

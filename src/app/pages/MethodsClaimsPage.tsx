@@ -16,10 +16,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/
 import { PdfHighlightViewer } from "../components/PdfHighlightViewer";
 import { useStore } from "../lib/store";
 import {
-  MethodsClaimsService, SessionStore, apiConfig, type ClaimResult, type ClaimSummary, type RefSeverity,
+  MethodsClaimsService, AuditStore, apiConfig, type ClaimResult, type ClaimSummary, type RefSeverity,
 } from "../lib/apiClient";
-
-const AUDITS_KEY = "methods_audits";
 
 const SEV_STYLE: Record<RefSeverity, string> = {
   high: "bg-red-500/10 text-red-600 border-red-500/30",
@@ -82,29 +80,33 @@ export function MethodsClaimsPage() {
 
   const auditKey = paper?.id || "__none__";
   useEffect(() => {
-    const a = s.methodsAudits[auditKey];
-    if (a) {
-      setResults(a.results || []); setSummary(a.summary || null); setDecisions(a.decisions || {});
-      setSelected((a.results || []).find((x: ClaimResult) => x.status === "flagged")?.index ?? (a.results || [])[0]?.index ?? null);
-    } else { setResults([]); setSummary(null); setDecisions({}); setSelected(null); }
+    let cancelled = false;
+    const apply = (a: any) => {
+      if (cancelled) return;
+      if (a) {
+        setResults(a.results || []); setSummary(a.summary || null); setDecisions(a.decisions || {});
+        setSelected((a.results || []).find((x: ClaimResult) => x.status === "flagged")?.index ?? (a.results || [])[0]?.index ?? null);
+      } else { setResults([]); setSummary(null); setDecisions({}); setSelected(null); }
+    };
+    const local = s.methodsAudits[auditKey];
+    if (local) { apply(local); }
+    else if (paper) {
+      apply(null);
+      AuditStore.getAll(paper.id).then((audits) => {
+        if (cancelled || !audits.methods) return;
+        s.setMethodsAudits({ ...s.methodsAudits, [auditKey]: audits.methods });
+        apply(audits.methods);
+      });
+    } else { apply(null); }
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auditKey]);
 
-  const redisRestored = useRef(false);
-  useEffect(() => {
-    if (redisRestored.current) return;
-    redisRestored.current = true;
-    SessionStore.get(AUDITS_KEY).then((remote) => {
-      if (remote && typeof remote === "object") s.setMethodsAudits({ ...remote, ...s.methodsAudits });
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   function persist(patch: Partial<{ results: ClaimResult[]; summary: ClaimSummary | null; decisions: Record<number, Decision> }>) {
     const prev = s.methodsAudits[auditKey] || {};
-    const nextMap = { ...s.methodsAudits, [auditKey]: { ...prev, ...patch, ranAt: Date.now() } };
-    s.setMethodsAudits(nextMap);
-    SessionStore.set(AUDITS_KEY, nextMap);
+    const entry = { ...prev, ...patch, ranAt: Date.now() };
+    s.setMethodsAudits({ ...s.methodsAudits, [auditKey]: entry });
+    if (auditKey !== "__none__") AuditStore.save(auditKey, "methods", entry);
   }
   function setDecision(index: number, d: Decision) {
     setDecisions((prev) => {
