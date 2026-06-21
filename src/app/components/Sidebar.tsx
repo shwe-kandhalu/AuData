@@ -44,8 +44,6 @@ const NAV: { id: PageId; label: string; icon: any; group?: string }[] = [
   { id: "imaging", label: "Image Forensics", icon: ImageIcon },
   { id: "methods", label: "Methods ↔ Claims", icon: GitCompare },
   { id: "references", label: "Reference Integrity", icon: BookMarked },
-  { id: "reliability", label: "Reliability Layer", icon: Gauge, group: "Reliability" },
-  { id: "review", label: "Flag Review", icon: ShieldCheck },
   { id: "report", label: "Audit Report", icon: FileText, group: "Report" },
 ];
 

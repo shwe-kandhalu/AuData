@@ -43,3 +43,4 @@ playwright==1.60.0
 
 # --- AuData storage ---
 redis==8.0.0
+ImageHash>=4.3.1

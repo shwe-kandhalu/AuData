@@ -18,6 +18,7 @@ import {
   AlertTriangle, CheckCircle2, XCircle, Loader2, Sparkles, Play, Hash, Database, Quote,
 } from "lucide-react";
 import { useStore } from "../lib/store";
+import { AuditStore } from "../lib/apiClient";
 
 type Stage = "Ingest" | "Detect" | "Reliability" | "Report" | "Manage";
 
@@ -346,6 +347,7 @@ If a category has no numbers to check, say so in the summary. flags array may be
       setConsistencyFlags(flags);
       setConsistencySummaries(summaries);
       setConsistencyMsg(flags.length === 0 ? "No internal inconsistencies found." : `${flags.length} issue${flags.length !== 1 ? "s" : ""} found.`);
+      if (paper?.id) AuditStore.save(paper.id, "numerical", { flags, summaries, ranAt: Date.now() });  // surface in the Audit Report
     } catch (e: any) {
       setConsistencyMsg(`Error: ${e.message}`);
     } finally {

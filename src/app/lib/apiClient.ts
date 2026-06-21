@@ -1265,6 +1265,44 @@ export const MethodsClaimsService = {
   },
 };
 
+// ── Meta-analysis recreation ─────────────────────────────────────────────────
+
+export type MetaForestRow = { label: string; effect: number; ci_low: number; ci_high: number; weight: number; y?: number; se?: number };
+export type MetaPooled = { effect: number; ci_low: number; ci_high: number };
+export type MetaCalcStep = { label: string; formula: string; value: string };
+export type MetaRecomputed = {
+  model: string; measure: string; ratio: boolean; k: number;
+  pooled: MetaPooled; i2: number; q: number; tau2: number;
+  forest: MetaForestRow[]; steps?: MetaCalcStep[];
+};
+export type MetaAnalysisResult = {
+  detected: boolean;
+  note?: string;
+  measure?: string;
+  model?: string;
+  reported?: Partial<MetaPooled>;
+  reported_i2?: number | null;
+  recomputed?: MetaRecomputed | null;
+  verdict?: "consistent" | "discrepancy" | "recomputed" | "unknown";
+  severity?: RefSeverity;
+  explanation?: string;
+};
+
+export const MetaRecreateService = {
+  async checkPaper(paperId: string, opts: { signal?: AbortSignal } = {}): Promise<MetaAnalysisResult> {
+    const r = await fetch(`${apiConfig.baseUrl}/meta-analysis/check-paper`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paper_id: paperId, model: apiConfig.model }), signal: opts.signal,
+    });
+    if (!r.ok) {
+      let detail = `meta-analysis check failed (${r.status})`;
+      try { detail = (await r.json()).detail || detail; } catch { /* ignore */ }
+      throw new Error(detail);
+    }
+    return (await r.json()) as MetaAnalysisResult;
+  },
+};
+
 export const StatisticalAuditService = {
   async recompute(
     paper: PaperUnderAudit,

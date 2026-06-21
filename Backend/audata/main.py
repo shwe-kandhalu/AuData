@@ -34,6 +34,7 @@ from . import settings, ingest, browserbase_fetch, storage, fulltext, llm, datas
 from . import reference_integrity as refint
 from . import methods_claims as mc
 from . import imageforensicsagents as imgforensics
+from . import meta_analysis as ma
 
 app = FastAPI(title="AuData API", version="0.1.0")
 
@@ -677,6 +678,27 @@ def methods_claims_stream(req: MethodsClaimsRequest):
                 return
 
     return StreamingResponse(_gen(), media_type="text/event-stream")
+
+
+class MetaAnalysisRequest(BaseModel):
+    paper_id: str
+    model: Optional[str] = None
+
+
+@app.post("/api/meta-analysis/check-paper")
+def meta_analysis_check_paper(req: MetaAnalysisRequest):
+    """If the paper is a meta-analysis, recompute its pooled effect (fixed +
+    DerSimonian-Laird random effects) from the extracted study data and compare
+    it to the reported pooled estimate."""
+    paper = storage.get_paper(req.paper_id)
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found. Ingest it first.")
+    model = llm.get_model_for(llm.TASK_REASONING, req.model or "") or llm.get_model_for(llm.TASK_EXTRACTION)
+    if model is None:
+        raise HTTPException(status_code=400, detail="No model is configured. Set a model key (e.g. ANTHROPIC_API_KEY) in Backend/.env.")
+    result = ma.analyze(paper, model)
+    storage.save_paper_audit(req.paper_id, "meta", result)
+    return result
 
 
 @app.get("/api/reference-integrity/from-paper")

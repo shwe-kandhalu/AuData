@@ -4,8 +4,8 @@ import { apiConfig, RerankResult, StudyEffect, MetaRunResult, EffectMeasure, Tau
 
 // AuData audit pipeline: Manage (dashboard, audits) → Ingest → Detect
 // (recompute, numerical, imaging, methods, references) → Reliability
-// (reliability, review) → Report.
-export type PageId = "dashboard" | "audits" | "ingest" | "recompute" | "numerical" | "imaging" | "methods" | "references" | "reliability" | "review" | "report";
+// → Report.
+export type PageId = "dashboard" | "audits" | "ingest" | "recompute" | "numerical" | "imaging" | "methods" | "references" | "report";
 
 export type SimulationRun = {
   id: string;
@@ -143,6 +143,8 @@ type Ctx = {
   // Detection results, keyed so each paper's audit persists across tabs/refresh.
   refAudits: Record<string, any>; setRefAudits: (v: Record<string, any>) => void;
   methodsAudits: Record<string, any>; setMethodsAudits: (v: Record<string, any>) => void;
+  metaAudits: Record<string, any>; setMetaAudits: (v: Record<string, any>) => void;
+  imageAudits: Record<string, any>; setImageAudits: (v: Record<string, any>) => void;
 
   // Quality Assessment
   rawPapers: Paper[] | null; setRawPapers: (v: Paper[] | null) => void;
@@ -275,7 +277,7 @@ export const SESSION_STORAGE_KEY = "audata:sessionId";
 const LOCAL_SNAPSHOT_KEY = "audata:snapshot";
 const VALID_PAGES: PageId[] = [
   "dashboard", "audits", "ingest", "recompute", "numerical", "imaging",
-  "methods", "references", "reliability", "review", "report",
+  "methods", "references", "report",
 ];
 function loadPage(): PageId {
   try {
@@ -330,6 +332,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [paperUnderAudit, setPaperUnderAudit] = useState<PaperUnderAudit | null>(null);
   const [refAudits, setRefAudits] = useState<Record<string, any>>({});
   const [methodsAudits, setMethodsAudits] = useState<Record<string, any>>({});
+  const [metaAudits, setMetaAudits] = useState<Record<string, any>>({});
+  const [imageAudits, setImageAudits] = useState<Record<string, any>>({});
   const [rawPapers, setRawPapers] = useState<Paper[] | null>(null);
   const [uniquePapers, setUniquePapers] = useState<Paper[] | null>(null);
   const [duplicatesCount, setDuplicatesCount] = useState(0);
@@ -484,7 +488,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const snapshot = () => ({
     history, pico, inclusion, exclusion, query, unifiedSearchQuery, perDbQueries,
     sources, numPerSource, model,
-    paperUnderAudit, refAudits, methodsAudits,
+    paperUnderAudit, refAudits, methodsAudits, metaAudits, imageAudits,
     rawPapers, uniquePapers, duplicatesCount, qualityReports,
     excludedByQuality: Array.from(excludedByQuality),
     qualityOverrides,
@@ -516,6 +520,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setPaperUnderAudit(d.paperUnderAudit ?? null);
     setRefAudits(d.refAudits ?? {});
     setMethodsAudits(d.methodsAudits ?? {});
+    setMetaAudits(d.metaAudits ?? {});
+    setImageAudits(d.imageAudits ?? {});
     setRawPapers(d.rawPapers ?? null);
     setUniquePapers(d.uniquePapers ?? null);
     setDuplicatesCount(d.duplicatesCount ?? 0);
@@ -556,7 +562,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const t = setTimeout(() => {
       // Persist whenever there's meaningful work — for AuData that's a paper
       // under audit or detection results, not (EE's) PICO history.
-      const hasWork = history.length > 0 || !!paperUnderAudit || Object.keys(refAudits).length > 0 || Object.keys(methodsAudits).length > 0;
+      const hasWork = history.length > 0 || !!paperUnderAudit || Object.keys(refAudits).length > 0 || Object.keys(methodsAudits).length > 0 || Object.keys(metaAudits).length > 0 || Object.keys(imageAudits).length > 0;
       if (!hasWork) { try { localStorage.removeItem(LOCAL_SNAPSHOT_KEY); } catch { /* ignore */ } return; }
       // Envelope keeps the session identity with the data, so a refresh keeps
       // editing the SAME session instead of spawning a duplicate.
@@ -576,7 +582,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }, 600);
     return () => clearTimeout(t);
   }, [history, pico, inclusion, exclusion, query, unifiedSearchQuery, perDbQueries,
-      paperUnderAudit, refAudits, methodsAudits,
+      paperUnderAudit, refAudits, methodsAudits, metaAudits, imageAudits,
       sources, numPerSource, model, rawPapers, uniquePapers, duplicatesCount,
       qualityReports, excludedByQuality, qualityOverrides, abstractOverrides,
       fullTextOverrides, rerankThreshold, rerankResults, results, fullTextResults,
@@ -631,6 +637,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     dbTestResults, setDbTestResults, agenticTrace, setAgenticTrace, agenticSummary, setAgenticSummary,
     simulationRuns, addSimulationRun, clearSimulationRuns,
     paperUnderAudit, setPaperUnderAudit, refAudits, setRefAudits, methodsAudits, setMethodsAudits,
+    metaAudits, setMetaAudits,
+    imageAudits, setImageAudits,
     rawPapers, setRawPapers, uniquePapers, setUniquePapers, duplicatesCount, setDuplicatesCount,
     qualityReports, setQualityReports, excludedByQuality, setExcludedByQuality,
     qualityOverrides, setQualityOverrides, addQualityOverride, clearQualityOverrides,

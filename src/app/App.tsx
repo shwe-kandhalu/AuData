@@ -6,7 +6,6 @@ import { AuthProvider } from "./lib/auth";
 import { UserMenu } from "./components/UserMenu";
 import {
   NumericalPage,
-  ReliabilityPage, ReviewPage, ReportPage,
 } from "./pages/AuditPlaceholders";
 import { DashboardPage } from "./pages/DashboardPage";
 import { AuditsPage } from "./pages/AuditsPage";
@@ -16,6 +15,7 @@ import { MethodsClaimsPage } from "./pages/MethodsClaimsPage";
 import { ImageForensicsPage } from "./pages/ImageForensicsPage";
 import { IngestService, AuditStore } from "./lib/apiClient";
 import { RecomputePage } from "./pages/RecomputePage";
+import { ReportPage } from "./pages/ReportPage";
 import { LayoutDashboard, Upload, Calculator, Hash, Image as ImageIcon, GitCompare, BookMarked, Gauge, ShieldCheck, FileText, Users } from "lucide-react";
 
 const PAGE_META: Record<string, { title: string; subtitle: string; icon: any }> = {
@@ -27,9 +27,7 @@ const PAGE_META: Record<string, { title: string; subtitle: string; icon: any }> 
   imaging: { title: "Image Forensics", subtitle: "Screen figures for manipulation, duplication, and AI generation", icon: ImageIcon },
   methods: { title: "Methods ↔ Claims", subtitle: "Check that conclusions are supported by methods and results", icon: GitCompare },
   references: { title: "Reference Integrity", subtitle: "Resolve, verify, and retraction-check citations", icon: BookMarked },
-  reliability: { title: "Reliability Layer", subtitle: "Per-flag calibration, abstention, and conclusion-impact triage", icon: Gauge },
-  review: { title: "Flag Review", subtitle: "Human-in-the-loop accept / dismiss / needs-human triage", icon: ShieldCheck },
-  report: { title: "Audit Report", subtitle: "Structured audit report with severity, confidence, and evidence links", icon: FileText },
+  report: { title: "Audit Report", subtitle: "Consolidated findings across every detector for this study", icon: FileText },
 };
 
 function Shell() {
@@ -67,6 +65,8 @@ function Shell() {
       if (cancelled) return;
       if (a.references && !s.refAudits[paperId]) s.setRefAudits({ ...s.refAudits, [paperId]: a.references });
       if (a.methods && !s.methodsAudits[paperId]) s.setMethodsAudits({ ...s.methodsAudits, [paperId]: a.methods });
+      if (a.meta && !s.metaAudits[paperId]) s.setMetaAudits({ ...s.metaAudits, [paperId]: a.meta });
+      if (a.images && !s.imageAudits[paperId]) s.setImageAudits({ ...s.imageAudits, [paperId]: a.images });
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -109,8 +109,6 @@ function Shell() {
           {s.page === "imaging" && <ImageForensicsPage />}
           {s.page === "methods" && <MethodsClaimsPage />}
           {s.page === "references" && <ReferenceIntegrityPage />}
-          {s.page === "reliability" && <ReliabilityPage />}
-          {s.page === "review" && <ReviewPage />}
           {s.page === "report" && <ReportPage />}
         </div>
       </main>

@@ -249,7 +249,7 @@ def rename_session(session_id: str, title: str) -> bool:
 
 # ── per-paper detection audits (stored in Redis + SQLite, keyed by paper) ──────
 
-_AUDIT_STAGES = ("references", "methods", "numerical", "recompute", "imaging")
+_AUDIT_STAGES = ("references", "methods", "numerical", "recompute", "imaging", "images", "meta", "statcheck")
 
 
 def save_paper_audit(paper_id: str, stage: str, data: Any) -> None:
