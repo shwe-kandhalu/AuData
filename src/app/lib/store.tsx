@@ -296,7 +296,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // (LEADS-mistral-7b × LEADS-native @ score ≥ +0.20: recall=1.000,
   // specificity=0.676, MCC=+0.260 on van_Dis_2020). The Backend resolves
   // "leads" to the full GGUF tag and routes to the LEADS-native pipeline.
-  const [model, setModel] = useState("leads");
+  const [model, setModel] = useState("claude-sonnet-4-6");
   const [sources, setSources] = useState<string[]>(["PubMed", "Europe PMC", "Semantic Scholar"]);
   const [numPerSource, setNumPerSource] = useState(15);
   const [files, setFiles] = useState<File[]>([]);
