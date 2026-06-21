@@ -8,7 +8,6 @@ import { useEffect, useMemo, useState } from "react";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
-import { Checkbox } from "../components/ui/checkbox";
 import { Play, Loader2, X, Check, Download, FileSearch, Database, ChevronDown, ChevronRight } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { PdfHighlightViewer } from "../components/PdfHighlightViewer";
@@ -58,7 +57,6 @@ export function NumericalPage() {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<NumericalResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [flaggedOnly, setFlaggedOnly] = useState(false);
   const [decisions, setDecisions] = useState<Record<number, Decision>>({});
   const [locate, setLocate] = useState<NumericalFlag | null>(null);
   const [showSummaries, setShowSummaries] = useState(true);
@@ -124,16 +122,20 @@ export function NumericalPage() {
   }
 
   const flags = result?.flags || [];
-  const shown = useMemo(() => {
-    const idx = flags.map((f, i) => ({ f, i }));
-    const list = flaggedOnly ? idx : idx; // all flags are issues; filter kept for symmetry
-    return list.sort((a, b) => (SEV_RANK[b.f.severity] || 0) - (SEV_RANK[a.f.severity] || 0));
-  }, [flags, flaggedOnly]);
+  // Group inconsistencies by check, keeping each flag's original index so triage
+  // decisions and CSV export stay aligned.
+  const byCat = useMemo(() => {
+    const m: Record<string, { f: NumericalFlag; i: number }[]> = {};
+    flags.forEach((f, i) => { (m[f.type] = m[f.type] || []).push({ f, i }); });
+    Object.values(m).forEach((list) => list.sort((a, b) => (SEV_RANK[b.f.severity] || 0) - (SEV_RANK[a.f.severity] || 0)));
+    return m;
+  }, [flags]);
   const flagsByCat = useMemo(() => {
     const m: Record<string, number> = {};
     for (const f of flags) m[f.type] = (m[f.type] || 0) + 1;
     return m;
   }, [flags]);
+  const jumpTo = (key: string) => document.getElementById(`cat-${key}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   return (
     <div className="space-y-4">
@@ -167,70 +169,84 @@ export function NumericalPage() {
 
       {result && (
         <>
-          {/* per-category summaries */}
-          {result.summaries && Object.keys(result.summaries).length > 0 && (
-            <Card className="p-4">
-              <button onClick={() => setShowSummaries((v) => !v)} className="flex w-full items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-                {showSummaries ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}What each check found
-              </button>
-              {showSummaries && (
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  {CATEGORIES.map((c) => {
-                    const n = flagsByCat[c.key] || 0;
-                    return (
-                      <div key={c.key} className="rounded-md border p-3">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-sm font-medium">{c.label}</span>
-                          <Badge variant="outline" className={n ? SEV_STYLE.high : SEV_STYLE.none}>{n ? `${n} flagged` : "OK"}</Badge>
-                        </div>
-                        {result.summaries[c.key] && <p className="mt-1 text-xs text-muted-foreground">{result.summaries[c.key]}</p>}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </Card>
-          )}
-
-          {/* unified flag list */}
-          {flags.length > 0 ? (
-            <Card className="p-2">
-              <label className="flex cursor-pointer items-center gap-2 px-2 py-1 text-[11px] text-muted-foreground">
-                <Checkbox checked={flaggedOnly} onCheckedChange={(v) => setFlaggedOnly(v === true)} />Inconsistent only (all rows are flags)
-              </label>
-              <div className="space-y-2 p-1">
-                {shown.map(({ f, i }) => {
-                  const dec = decisions[i];
+          {/* overview — click a check to jump to its section below */}
+          <Card className="p-4">
+            <button onClick={() => setShowSummaries((v) => !v)} className="flex w-full items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+              {showSummaries ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}What each check found — click to jump
+            </button>
+            {showSummaries && (
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                {CATEGORIES.map((c) => {
+                  const n = flagsByCat[c.key] || 0;
                   return (
-                    <div key={i} className={`rounded-md border p-3 ${dec === "dismiss" ? "opacity-50" : ""}`}>
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <span className={`size-2 rounded-full ${SEV_DOT[f.severity]}`} />
-                          <Badge variant="outline" className="bg-muted">{CAT_LABEL[f.type] || f.type}</Badge>
-                          <Badge variant="outline" className={SEV_STYLE[f.severity] + " capitalize text-[10px]"}>{f.severity}</Badge>
-                        </div>
-                        <div className="flex gap-1.5">
-                          {paper?.has_pdf && f.excerpt && (
-                            <Button variant="outline" size="sm" onClick={() => setLocate(f)}><FileSearch className="mr-1 size-3.5" />Locate</Button>
-                          )}
-                          <Button variant="outline" size="sm" onClick={() => setDecision(i, "accept")}
-                            className={dec === "accept" ? "border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700" : "border-emerald-500/50 text-emerald-700 hover:bg-emerald-500/10 hover:text-emerald-700"}>
-                            <Check className="size-3.5" /></Button>
-                          <Button variant="outline" size="sm" onClick={() => setDecision(i, "dismiss")}
-                            className={dec === "dismiss" ? "border-red-600 bg-red-600 text-white hover:bg-red-700" : "border-red-500/50 text-red-600 hover:bg-red-500/10 hover:text-red-600"}>
-                            <X className="size-3.5" /></Button>
-                        </div>
+                    <button key={c.key} onClick={() => jumpTo(c.key)}
+                      className="rounded-md border p-3 text-left transition-colors hover:border-primary/40 hover:bg-muted/40">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-medium">{c.label}</span>
+                        <Badge variant="outline" className={n ? SEV_STYLE.high : SEV_STYLE.none}>{n ? `${n} flagged` : "OK"}</Badge>
                       </div>
-                      <p className="mt-2 text-sm">{f.description}</p>
-                      {f.excerpt && <p className="mt-1 border-l-2 border-muted pl-2 text-xs italic text-muted-foreground">“{f.excerpt}”</p>}
-                    </div>
+                      {result.summaries?.[c.key] && <p className="mt-1 text-xs text-muted-foreground">{result.summaries[c.key]}</p>}
+                    </button>
                   );
                 })}
               </div>
-            </Card>
-          ) : (
-            <Card className="p-6 text-sm text-emerald-600">No numerical inconsistencies found across the six checks.</Card>
-          )}
+            )}
+          </Card>
+
+          {/* one subsection per check, with the source text pulled from the paper */}
+          {CATEGORIES.map((c) => {
+            const list = byCat[c.key] || [];
+            return (
+              <Card key={c.key} id={`cat-${c.key}`} className="scroll-mt-24 p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-semibold">{c.label}</h3>
+                  <Badge variant="outline" className={list.length ? SEV_STYLE.high : SEV_STYLE.none}>
+                    {list.length ? `${list.length} inconsistenc${list.length === 1 ? "y" : "ies"}` : "No issues"}
+                  </Badge>
+                </div>
+                {result.summaries?.[c.key] && <p className="mt-1 text-xs text-muted-foreground">{result.summaries[c.key]}</p>}
+                {list.length > 0 ? (
+                  <div className="mt-3 space-y-2">
+                    {list.map(({ f, i }) => {
+                      const dec = decisions[i];
+                      return (
+                        <div key={i} className={`rounded-md border p-3 ${dec === "dismiss" ? "opacity-50" : ""}`}>
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className={`size-2 rounded-full ${SEV_DOT[f.severity]}`} />
+                              <Badge variant="outline" className={SEV_STYLE[f.severity] + " capitalize text-[10px]"}>{f.severity}</Badge>
+                            </div>
+                            <div className="flex gap-1.5">
+                              {paper?.has_pdf && f.excerpt && (
+                                <Button variant="outline" size="sm" onClick={() => setLocate(f)}><FileSearch className="mr-1 size-3.5" />Locate</Button>
+                              )}
+                              <Button variant="outline" size="sm" onClick={() => setDecision(i, "accept")}
+                                className={dec === "accept" ? "border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700" : "border-emerald-500/50 text-emerald-700 hover:bg-emerald-500/10 hover:text-emerald-700"}>
+                                <Check className="size-3.5" /></Button>
+                              <Button variant="outline" size="sm" onClick={() => setDecision(i, "dismiss")}
+                                className={dec === "dismiss" ? "border-red-600 bg-red-600 text-white hover:bg-red-700" : "border-red-500/50 text-red-600 hover:bg-red-500/10 hover:text-red-600"}>
+                                <X className="size-3.5" /></Button>
+                            </div>
+                          </div>
+                          <p className="mt-2 text-sm">{f.description}</p>
+                          {f.excerpt && (
+                            <div className="mt-2 rounded-md border border-l-2 border-l-primary/50 bg-muted/40 p-2">
+                              <div className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                                <FileSearch className="size-3" />Pulled from the paper
+                              </div>
+                              <p className="mt-0.5 text-xs italic text-foreground">“{f.excerpt}”</p>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-xs text-emerald-600">No inconsistencies found for this check.</p>
+                )}
+              </Card>
+            );
+          })}
         </>
       )}
 
