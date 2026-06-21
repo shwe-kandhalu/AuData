@@ -4,9 +4,7 @@ import { Toaster } from "./components/ui/sonner";
 import { StoreProvider, useStore } from "./lib/store";
 import { AuthProvider } from "./lib/auth";
 import { UserMenu } from "./components/UserMenu";
-import {
-  NumericalPage,
-} from "./pages/AuditPlaceholders";
+import { NumericalPage } from "./pages/NumericalPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { AuditsPage } from "./pages/AuditsPage";
 import { IngestPage } from "./pages/IngestPage";
@@ -67,6 +65,7 @@ function Shell() {
       if (a.methods && !s.methodsAudits[paperId]) s.setMethodsAudits({ ...s.methodsAudits, [paperId]: a.methods });
       if (a.meta && !s.metaAudits[paperId]) s.setMetaAudits({ ...s.metaAudits, [paperId]: a.meta });
       if (a.images && !s.imageAudits[paperId]) s.setImageAudits({ ...s.imageAudits, [paperId]: a.images });
+      if (a.numerical && !s.numericalAudits[paperId]) s.setNumericalAudits({ ...s.numericalAudits, [paperId]: a.numerical });
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps

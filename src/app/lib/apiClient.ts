@@ -1288,6 +1288,46 @@ export type MetaAnalysisResult = {
   explanation?: string;
 };
 
+// ── Numerical consistency (unified, server-side) ─────────────────────────────
+
+export type NumericalFlag = { type: string; severity: RefSeverity; description: string; excerpt: string };
+export type NumericalResult = {
+  flags: NumericalFlag[];
+  summaries: Record<string, string>;
+  summary: { checked: number; flagged: number; by_severity: Record<string, number> };
+  note?: string;
+};
+
+export const NumericalConsistencyService = {
+  async checkPaper(paperId: string, opts: { signal?: AbortSignal } = {}): Promise<NumericalResult> {
+    const r = await fetch(`${apiConfig.baseUrl}/numerical/check-paper`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paper_id: paperId, model: apiConfig.model }), signal: opts.signal,
+    });
+    if (!r.ok) {
+      let detail = `numerical check failed (${r.status})`;
+      try { detail = (await r.json()).detail || detail; } catch { /* ignore */ }
+      throw new Error(detail);
+    }
+    return (await r.json()) as NumericalResult;
+  },
+};
+
+export const DatasetService = {
+  async audit(fullText: string, opts: { signal?: AbortSignal } = {}): Promise<any> {
+    const r = await fetch(`${apiConfig.baseUrl}/audit/dataset`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ full_text: fullText }), signal: opts.signal,
+    });
+    if (!r.ok) {
+      let detail = `dataset audit failed (${r.status})`;
+      try { detail = (await r.json()).detail || detail; } catch { /* ignore */ }
+      throw new Error(detail);
+    }
+    return await r.json();
+  },
+};
+
 export const MetaRecreateService = {
   async checkPaper(paperId: string, opts: { signal?: AbortSignal } = {}): Promise<MetaAnalysisResult> {
     const r = await fetch(`${apiConfig.baseUrl}/meta-analysis/check-paper`, {

@@ -35,6 +35,7 @@ from . import reference_integrity as refint
 from . import methods_claims as mc
 from . import imageforensicsagents as imgforensics
 from . import meta_analysis as ma
+from . import numerical as nu
 from . import report_doc
 
 app = FastAPI(title="AuData API", version="0.1.0")
@@ -679,6 +680,26 @@ def methods_claims_stream(req: MethodsClaimsRequest):
                 return
 
     return StreamingResponse(_gen(), media_type="text/event-stream")
+
+
+class NumericalRequest(BaseModel):
+    paper_id: str
+    model: Optional[str] = None
+
+
+@app.post("/api/numerical/check-paper")
+def numerical_check_paper(req: NumericalRequest):
+    """Unified numerical-consistency check (percentages, sums, table/text,
+    implausible values, abstract/results, qualitative quantifiers)."""
+    paper = storage.get_paper(req.paper_id)
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found. Ingest it first.")
+    model = llm.get_model_for(llm.TASK_REASONING, req.model or "") or llm.get_model_for(llm.TASK_EXTRACTION)
+    if model is None:
+        raise HTTPException(status_code=400, detail="No model is configured. Set a model key (e.g. ANTHROPIC_API_KEY) in Backend/.env.")
+    result = nu.analyze(paper, model)
+    storage.save_paper_audit(req.paper_id, "numerical", result)
+    return result
 
 
 class MetaAnalysisRequest(BaseModel):
