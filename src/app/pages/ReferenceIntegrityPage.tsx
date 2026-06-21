@@ -214,7 +214,7 @@ export function ReferenceIntegrityPage() {
       </Card>
 
       {/* Summary + metrics + export */}
-      {(running || results.length > 0) && (
+      {(running || results.length > 0 || summary) && (
         <Card className="p-3 space-y-3">
           <div className="flex flex-wrap items-center gap-3">
             {running && <span className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />Checking… {results.length}</span>}
@@ -228,6 +228,11 @@ export function ReferenceIntegrityPage() {
               <Download className="size-4 mr-1.5" />Export CSV
             </Button>
           </div>
+          {!running && summary && results.length === 0 && (
+            <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-700">
+              {summary.note || "No references could be checked from this paper. The reference list may be missing, unparseable, or not present in the extracted text."}
+            </div>
+          )}
           {metrics && (
             <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground border-t pt-2">
               <Metric label="Self-citation rate" value={`${(metrics.self_citation_rate * 100).toFixed(0)}% (${metrics.self_citations})`} warn={metrics.self_citation_rate >= 0.25} />
