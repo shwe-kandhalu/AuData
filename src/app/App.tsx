@@ -13,6 +13,7 @@ import { AuditsPage } from "./pages/AuditsPage";
 import { IngestPage } from "./pages/IngestPage";
 import { ReferenceIntegrityPage } from "./pages/ReferenceIntegrityPage";
 import { MethodsClaimsPage } from "./pages/MethodsClaimsPage";
+import { IngestService, AuditStore } from "./lib/apiClient";
 import { LayoutDashboard, Upload, Calculator, Hash, Image as ImageIcon, GitCompare, BookMarked, Gauge, ShieldCheck, FileText, Users } from "lucide-react";
 
 const PAGE_META: Record<string, { title: string; subtitle: string; icon: any }> = {
@@ -44,6 +45,30 @@ function Shell() {
     // subsequent state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // On load, if no paper is in the store yet, restore the last one from the
+  // server session (Redis) — so a refresh on any tab brings the paper back.
+  useEffect(() => {
+    if (s.paperUnderAudit) return;
+    IngestService.restoreSession().then((p) => { if (p) s.setPaperUnderAudit(p); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Whenever the paper under audit changes (open / restore), pull ALL of its
+  // saved detection results from the server so every tab (incl. Dashboard)
+  // shows them without having to visit each detector first.
+  const paperId = s.paperUnderAudit?.id;
+  useEffect(() => {
+    if (!paperId) return;
+    let cancelled = false;
+    AuditStore.getAll(paperId).then((a) => {
+      if (cancelled) return;
+      if (a.references && !s.refAudits[paperId]) s.setRefAudits({ ...s.refAudits, [paperId]: a.references });
+      if (a.methods && !s.methodsAudits[paperId]) s.setMethodsAudits({ ...s.methodsAudits, [paperId]: a.methods });
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paperId]);
   return (
     <div className="flex min-h-screen bg-background text-foreground">
       <Toaster richColors position="top-right" />
