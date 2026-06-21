@@ -755,16 +755,14 @@ def copy_move_detection(image_path: str, output_dir: str, min_matches: int = 12)
     suspicious = sorted(suspicious, key=lambda x: x.distance)
     overlay_path = output_dir / f"{Path(image_path).stem}_copy_move_overlay.png"
 
-    matched_img = cv2.drawMatches(
-        img,
-        keypoints,
-        img,
-        keypoints,
-        suspicious[:50],
-        None,
-        flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS,
-    )
-    cv2.imwrite(str(overlay_path), matched_img)
+    overlay = img.copy()
+    for m in suspicious[:50]:
+        pt1 = tuple(map(int, keypoints[m.queryIdx].pt))
+        pt2 = tuple(map(int, keypoints[m.trainIdx].pt))
+        cv2.circle(overlay, pt1, 4, (0, 255, 0), -1)
+        cv2.circle(overlay, pt2, 4, (0, 0, 255), -1)
+        cv2.line(overlay, pt1, pt2, (255, 0, 0), 1)
+    cv2.imwrite(str(overlay_path), overlay)
 
     severity = "high" if len(suspicious) >= min_matches else "low"
 
