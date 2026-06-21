@@ -187,19 +187,7 @@ export function ImageForensicsPage() {
             {report.figure_forensics.map((fig, idx) => (
               <div key={idx} className="border rounded-md p-4 space-y-2">
                 <div className="text-sm font-medium text-muted-foreground">Figure {idx + 1}</div>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  {fig.copy_move_result && (
-                    <div>
-                      <div className="text-muted-foreground">Copy-Move Detection</div>
-                      <div className="space-y-1">
-                        <div>Severity: <span className={`font-medium ${fig.copy_move_result.severity === 'high' ? 'text-red-600' : fig.copy_move_result.severity === 'moderate' ? 'text-amber-600' : 'text-slate-600'}`}>{fig.copy_move_result.severity}</span></div>
-                        <div>Matches: {fig.copy_move_result.num_suspicious_matches || 0}</div>
-                        {fig.copy_move_result.overlay_path && (
-                          <img src={`${apiConfig.baseUrl}/image-forensics/image?filepath=${encodeURIComponent(fig.copy_move_result.overlay_path)}`} alt="Copy-Move overlay" className="max-w-sm border rounded mt-2" />
-                        )}
-                      </div>
-                    </div>
-                  )}
+                <div className="space-y-3 text-xs">
                   {fig.splice_result && (
                     <div>
                       <div className="text-muted-foreground">Splice Detection</div>
