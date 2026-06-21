@@ -29,6 +29,7 @@ from pydantic import BaseModel
 
 from . import settings, ingest, browserbase_fetch, storage, fulltext, llm
 from . import reference_integrity as refint
+from . import methods_claims as mc
 
 app = FastAPI(title="AuData API", version="0.1.0")
 
@@ -421,6 +422,63 @@ def reference_integrity_stream(req: ReferenceIntegrityRequest):
                     results.append(res)
                     event_queue.put(("result", res))
             event_queue.put(("done", {"summary": refint.summarize(results)}))
+        except Exception as e:
+            event_queue.put(("error", {"message": str(e)}))
+
+    threading.Thread(target=_run, daemon=True).start()
+
+    def _gen():
+        while True:
+            try:
+                event_type, data = event_queue.get(timeout=600)
+            except queue.Empty:
+                yield f"event: error\ndata: {_json.dumps({'message': 'timeout'})}\n\n"
+                return
+            yield f"event: {event_type}\ndata: {_json.dumps(data)}\n\n"
+            if event_type in ("done", "error"):
+                return
+
+    return StreamingResponse(_gen(), media_type="text/event-stream")
+
+
+class MethodsClaimsRequest(BaseModel):
+    paper_id: str
+    model: Optional[str] = None
+
+
+@app.post("/api/methods-claims/check-paper/stream")
+def methods_claims_stream(req: MethodsClaimsRequest):
+    """Extract the paper's claims, then assess each against its methods/results."""
+    paper = storage.get_paper(req.paper_id)
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found. Ingest it first.")
+    model = llm.get_model(req.model)
+    event_queue: "queue.Queue[tuple]" = queue.Queue()
+
+    def _run():
+        results: List[Dict[str, Any]] = []
+        try:
+            if model is None:
+                event_queue.put(("error", {"message": "No LLM is configured. Set a model key (e.g. ANTHROPIC_API_KEY) in Backend/.env."}))
+                return
+            claims = mc.extract_claims(paper, model)
+            if not claims:
+                event_queue.put(("done", {"summary": mc.summarize([]), "note": "No claims could be extracted from this paper."}))
+                return
+            evidence = mc._evidence_context(paper)
+            with ThreadPoolExecutor(max_workers=min(6, len(claims))) as ex:
+                futs = {ex.submit(mc.check_claim, i, c, evidence, model): i for i, c in enumerate(claims)}
+                for fut in as_completed(futs):
+                    i = futs[fut]
+                    try:
+                        res = fut.result()
+                    except Exception as e:
+                        res = {"index": i, "claim": claims[i], "verdict": "error", "severity": "medium",
+                               "issue_type": "Check failed", "confidence": 0.0, "reasoning": str(e),
+                               "evidence": "", "suggestion": "", "status": "flagged"}
+                    results.append(res)
+                    event_queue.put(("result", res))
+            event_queue.put(("done", {"summary": mc.summarize(results)}))
         except Exception as e:
             event_queue.put(("error", {"message": str(e)}))
 

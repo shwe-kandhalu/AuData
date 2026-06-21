@@ -1112,3 +1112,71 @@ export const ReferenceIntegrityService = {
       { paper_id: paperId, model: apiConfig.model, check_claims: opts.checkClaims !== false }, opts);
   },
 };
+
+// ---------------------------------------------------------------------------
+// Methods ↔ Claims (Detect)
+// ---------------------------------------------------------------------------
+
+export type ClaimVerdict =
+  | "supported" | "overreach" | "causal_overreach" | "overgeneralization"
+  | "unsupported" | "methods_mismatch" | "skipped" | "error";
+
+export type ClaimResult = {
+  index: number;
+  claim: string;
+  verdict: ClaimVerdict;
+  severity: RefSeverity;
+  issue_type: string;
+  confidence: number;
+  reasoning: string;
+  evidence: string;
+  suggestion: string;
+  status: "flagged" | "ok";
+};
+
+export type ClaimSummary = {
+  total: number; flagged: number; supported: number;
+  by_verdict: Record<string, number>; by_severity: Record<string, number>;
+};
+
+export const MethodsClaimsService = {
+  async checkPaper(
+    paperId: string,
+    opts: { signal?: AbortSignal; onResult?: (r: ClaimResult) => void } = {},
+  ): Promise<{ results: ClaimResult[]; summary: ClaimSummary | null; note?: string }> {
+    const res = await fetch(`${apiConfig.baseUrl}/methods-claims/check-paper/stream`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paper_id: paperId, model: apiConfig.model }), signal: opts.signal,
+    });
+    if (!res.ok || !res.body) throw new Error(`methods-claims stream failed (${res.status})`);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    const results: ClaimResult[] = [];
+    let summary: ClaimSummary | null = null;
+    let note: string | undefined;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let idx: number;
+      while ((idx = buf.indexOf("\n\n")) !== -1) {
+        const rawEvt = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+        let event = "message", data = "";
+        for (const line of rawEvt.split("\n")) {
+          if (line.startsWith("event:")) event = line.slice(6).trim();
+          else if (line.startsWith("data:")) data += line.slice(5).trim();
+        }
+        if (!data) continue;
+        let parsed: any;
+        try { parsed = JSON.parse(data); } catch { continue; }
+        if (event === "result") { results.push(parsed); opts.onResult?.(parsed); }
+        else if (event === "done") { summary = parsed?.summary ?? null; note = parsed?.note; }
+        else if (event === "error") throw new Error(parsed?.message || "methods-claims error");
+      }
+    }
+    results.sort((a, b) => a.index - b.index);
+    return { results, summary, note };
+  },
+};

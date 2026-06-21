@@ -6,10 +6,11 @@ import { AuthProvider } from "./lib/auth";
 import { UserMenu } from "./components/UserMenu";
 import {
   DashboardPage, AuditsPage, RecomputePage, NumericalPage,
-  ImagingPage, MethodsPage, ReliabilityPage, ReviewPage, ReportPage,
+  ImagingPage, ReliabilityPage, ReviewPage, ReportPage,
 } from "./pages/AuditPlaceholders";
 import { IngestPage } from "./pages/IngestPage";
 import { ReferenceIntegrityPage } from "./pages/ReferenceIntegrityPage";
+import { MethodsClaimsPage } from "./pages/MethodsClaimsPage";
 import { LayoutDashboard, Upload, Calculator, Hash, Image as ImageIcon, GitCompare, BookMarked, Gauge, ShieldCheck, FileText, Users } from "lucide-react";
 
 const PAGE_META: Record<string, { title: string; subtitle: string; icon: any }> = {
@@ -77,7 +78,7 @@ function Shell() {
           {s.page === "recompute" && <RecomputePage />}
           {s.page === "numerical" && <NumericalPage />}
           {s.page === "imaging" && <ImagingPage />}
-          {s.page === "methods" && <MethodsPage />}
+          {s.page === "methods" && <MethodsClaimsPage />}
           {s.page === "references" && <ReferenceIntegrityPage />}
           {s.page === "reliability" && <ReliabilityPage />}
           {s.page === "review" && <ReviewPage />}
