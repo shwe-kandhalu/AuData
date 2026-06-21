@@ -276,10 +276,6 @@ export function NumericalPage() {
   }, [paper?.id]);
 
   // ── API key (read-only, from env or localStorage) ───────────────────
-  const apiKey: string =
-    (import.meta as any).env?.VITE_ANTHROPIC_API_KEY ||
-    localStorage.getItem("audata:anthropic-key") || "";
-
   // ── 1. Internal Consistency ──────────────────────────────────────────
   const CONSISTENCY_STEPS: { label: string; desc: string; passMsg: string; type: RecFlag["type"] | null }[] = [
     { label: "Subgroup N sums",         desc: "Do the group sizes add up to the total N?",                          passMsg: "All subgroup Ns sum correctly to their reported totals.",              type: "n_sum_error" },
@@ -302,18 +298,12 @@ export function NumericalPage() {
   }, [consistencyBusy]);
 
   async function runConsistency() {
-    if (!apiKey) { setConsistencyMsg("Add your Anthropic API key above first."); return; }
     if (!paperText.trim()) { setConsistencyMsg("No paper loaded."); return; }
     setConsistencyBusy(true); setConsistencyFlags(null); setConsistencySummaries({}); setConsistencyMsg("");
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("/api/llm/chat", {
         method: "POST",
-        headers: {
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true",
-          "content-type": "application/json",
-        },
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({
           model: claudeModel,
           max_tokens: 4096,
@@ -378,7 +368,6 @@ If a category has no numbers to check, say so in the summary. flags array may be
   }
 
   async function extractQualClaims() {
-    if (!apiKey) { setQualMsg("Add your Anthropic API key above first."); return; }
     if (!paperText.trim()) { setQualMsg("No paper text loaded."); return; }
     setExtractingQual(true); setQualMsg(""); setQualClaims([]);
 
@@ -408,14 +397,9 @@ ${paperText.slice(0, 20000)}
 </paper>`;
 
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("/api/llm/chat", {
         method: "POST",
-        headers: {
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true",
-          "content-type": "application/json",
-        },
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({
           model: claudeModel,
           max_tokens: 2048,
@@ -589,7 +573,6 @@ ${paperText.slice(0, 20000)}
   }
 
   async function compareDatasetWithPaper(file: DatasetFile) {
-    if (!apiKey) { setDatasetMsg("Anthropic API key not configured."); return; }
     setComparingDataset(true); setDatasetComparison(null);
 
     const statSummary = Object.entries(file.stats)
@@ -619,14 +602,9 @@ Return ONLY valid JSON (no markdown, no preamble):
 }`;
 
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("/api/llm/chat", {
         method: "POST",
-        headers: {
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true",
-          "content-type": "application/json",
-        },
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({
           model: claudeModel,
           max_tokens: 2048,

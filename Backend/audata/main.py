@@ -822,3 +822,32 @@ def image_forensics_check_paper_stream(req: ImageForensicsRequest):
             if event_type in ("done", "error"):
                 return
     return StreamingResponse(_gen(), media_type="text/event-stream")
+
+
+# ── LLM proxy (so the frontend doesn't need a client-side API key) ────────────
+
+class LLMChatRequest(BaseModel):
+    model: str = ""
+    messages: List[Dict[str, str]] = []
+    max_tokens: int = 4096
+
+
+@app.post("/api/llm/chat")
+def llm_chat(req: LLMChatRequest):
+    model_name = req.model or llm.default_model()
+    m = llm.get_model(model_name)
+    if m is None:
+        raise HTTPException(status_code=503, detail=f"Model '{model_name}' is not available — check your API key in Backend/.env.")
+    try:
+        from langchain_core.messages import HumanMessage, SystemMessage
+        lc_msgs = []
+        for msg in req.messages:
+            if msg.get("role") == "system":
+                lc_msgs.append(SystemMessage(content=msg["content"]))
+            elif msg.get("role") == "user":
+                lc_msgs.append(HumanMessage(content=msg["content"]))
+        r = m.invoke(lc_msgs)
+        text = getattr(r, "content", "") or ""
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"content": [{"type": "text", "text": text}]}
