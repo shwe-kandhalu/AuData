@@ -1279,3 +1279,82 @@ export const StatisticalAuditService = {
     }, signal);
   },
 };
+
+// ───────────────────────────────────────────────────────────────────────────
+// Image Forensics (Detect)
+// ───────────────────────────────────────────────────────────────────────────
+
+export type ImageFinding = {
+  flag_type: string;
+  target_figure: string;
+  candidate_figure: string;
+  similarity_score: number;
+  severity: "high" | "moderate" | "low";
+};
+
+export type ImageForensicsSummary = {
+  total_images: number;
+  flagged: number;
+  by_severity: Record<string, number>;
+  by_flag: Record<string, number>;
+};
+
+export type ImageForensicsReport = {
+  agent: string;
+  target_paper_id: string;
+  target_paper_title: string;
+  num_target_figures: number;
+  num_candidate_figures: number;
+  num_cross_paper_findings: number;
+  cross_paper_findings: ImageFinding[];
+  figure_forensics: any[];
+  report_path: string;
+};
+
+export const ImageForensicsService = {
+  async checkPaper(
+    paperId: string,
+    opts: { signal?: AbortSignal; onResult?: (r: any) => void } = {},
+  ): Promise<{ summary: ImageForensicsSummary | null; report: ImageForensicsReport | null; note?: string }> {
+    const res = await fetch(`${apiConfig.baseUrl}/image-forensics/check-paper/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paper_id: paperId, similarity_threshold: 8 }),
+      signal: opts.signal,
+    });
+    if (!res.ok || !res.body) throw new Error(`image-forensics stream failed (${res.status})`);
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    let summary: ImageForensicsSummary | null = null;
+    let report: ImageForensicsReport | null = null;
+    let note: string | undefined;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let idx: number;
+      while ((idx = buf.indexOf("\n\n")) !== -1) {
+        const rawEvt = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+        let event = "message", data = "";
+        for (const line of rawEvt.split("\n")) {
+          if (line.startsWith("event:")) event = line.slice(6).trim();
+          else if (line.startsWith("data:")) data += line.slice(5).trim();
+        }
+        if (!data) continue;
+        let parsed: any;
+        try { parsed = JSON.parse(data); } catch { continue; }
+        if (event === "done") {
+          summary = parsed?.summary ?? null;
+          report = parsed?.report ?? null;
+          note = parsed?.note;
+        }
+        else if (event === "error") throw new Error(parsed?.message || "image-forensics error");
+      }
+    }
+    return { summary, report, note };
+  },
+};
