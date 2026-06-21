@@ -35,6 +35,7 @@ from . import reference_integrity as refint
 from . import methods_claims as mc
 from . import imageforensicsagents as imgforensics
 from . import meta_analysis as ma
+from . import report_doc
 
 app = FastAPI(title="AuData API", version="0.1.0")
 
@@ -699,6 +700,24 @@ def meta_analysis_check_paper(req: MetaAnalysisRequest):
     result = ma.analyze(paper, model)
     storage.save_paper_audit(req.paper_id, "meta", result)
     return result
+
+
+@app.get("/api/report/docx")
+def report_docx(paper_id: str):
+    """Synthesize every detector's findings into a downloadable Word document."""
+    paper = storage.get_paper(paper_id)
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found. Ingest it first.")
+    try:
+        data = report_doc.build_docx(paper_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Could not build report: {e}")
+    safe = "".join(c if c.isalnum() or c in "-._" else "_" for c in paper_id)[:80] or "audit"
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="audit-report-{safe}.docx"'},
+    )
 
 
 @app.get("/api/reference-integrity/from-paper")

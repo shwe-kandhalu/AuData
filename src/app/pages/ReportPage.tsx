@@ -14,7 +14,7 @@ import {
   BookMarked, GitCompare, Calculator, Hash, Image as ImageIcon, Sigma, Upload,
 } from "lucide-react";
 import { useStore, type PageId } from "../lib/store";
-import { AuditStore, type RefSeverity } from "../lib/apiClient";
+import { AuditStore, apiConfig, type RefSeverity } from "../lib/apiClient";
 
 type Item = { title: string; severity: RefSeverity; detail: string };
 type Norm = { ran: boolean; total: number; flagged: number; items: Item[]; note?: string };
@@ -115,6 +115,22 @@ export function ReportPage() {
   const paper = s.paperUnderAudit;
   const [audits, setAudits] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
+  async function downloadDocx() {
+    if (!paper) return;
+    setDownloading(true);
+    try {
+      const r = await fetch(`${apiConfig.baseUrl}/report/docx?paper_id=${encodeURIComponent(paper.id)}`);
+      if (!r.ok) throw new Error(`report failed (${r.status})`);
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `audit-report-${paper.id.replace(/[^\w.-]+/g, "_")}.docx`;
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    } catch { /* surfaced via button only */ }
+    finally { setDownloading(false); }
+  }
 
   const load = useCallback(() => {
     if (!paper) return;
@@ -183,8 +199,11 @@ export function ReportPage() {
           </div>
           <div className="flex shrink-0 gap-1.5">
             <Button variant="outline" size="sm" onClick={load}><RefreshCw className="mr-1.5 size-4" />Refresh</Button>
-            <Button size="sm" onClick={() => downloadMd(`audit-report-${(paper.id).replace(/[^\w.-]+/g, "_")}.md`, buildMarkdown())}>
-              <Download className="mr-1.5 size-4" />Download report
+            <Button variant="outline" size="sm" onClick={() => downloadMd(`audit-report-${(paper.id).replace(/[^\w.-]+/g, "_")}.md`, buildMarkdown())}>
+              <Download className="mr-1.5 size-4" />Markdown
+            </Button>
+            <Button size="sm" disabled={downloading} onClick={downloadDocx}>
+              {downloading ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : <FileText className="mr-1.5 size-4" />}Download Word
             </Button>
           </div>
         </div>
