@@ -19,6 +19,9 @@ import json as _json
 import queue
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+import re
+import sys
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -32,6 +35,10 @@ from . import reference_integrity as refint
 from . import methods_claims as mc
 
 app = FastAPI(title="AuData API", version="0.1.0")
+
+_repo_root = str(Path(__file__).resolve().parents[2])
+if _repo_root not in sys.path:
+    sys.path.insert(0, _repo_root)
 
 _origins = ["http://localhost:5173", "http://localhost:4173", "http://127.0.0.1:5173"] + settings.CORS_ORIGINS
 app.add_middleware(
@@ -107,6 +114,31 @@ def _pdf_for_viewer(doi: str, pmcid: str = "", arxiv: str = "") -> Optional[byte
     except Exception as e:
         print(f"[audata _pdf_for_viewer] {e}")
     return None
+
+
+class StatisticalRecomputeRequest(BaseModel):
+    paper_id: Optional[str] = ""
+    title: Optional[str] = ""
+    full_text: str
+    tolerance: float = 0.001
+
+
+def _no_statistical_findings_reason(text: str) -> str:
+    sample = (text or "").strip()
+    if not sample:
+        return "No full text was available to scan. Try uploading the PDF or using a DOI/URL with accessible full text."
+
+    lower = sample.lower()
+    has_p_value = bool(re.search(r"\bp\s*[<>=]\s*(?:0?\.\d+|1(?:\.0+)?)", sample, re.I))
+    has_test_marker = bool(re.search(r"\b(?:t|f|r)\s*\(|χ\s*2|χ²|chi[-\s]?square", sample, re.I))
+
+    if has_p_value and not has_test_marker:
+        return "The paper reports p-values without supported test statistics, for example p < .05 only, so there is no t/F/chi-square/r value and degrees of freedom to recompute."
+    if has_p_value:
+        return "The paper includes p-values, but not in a supported recomputable pattern such as t(df)=value, F(df1,df2)=value, chi-square(df)=value, or r(df)=value paired with a p-value."
+    if any(word in lower for word in ("results", "statistical", "significant", "regression", "anova")):
+        return "The text appears to discuss statistical results, but no supported t, F, chi-square, or r claim with a reported p-value was found."
+    return "No supported statistical claim patterns were found in the extracted text. Supported patterns currently include t(df), F(df1,df2), chi-square(df), and r(df) claims paired with p-values."
 
 
 def _persist(paper: Dict[str, Any], session_id: Optional[str], pdf_bytes: Optional[bytes] = None) -> Dict[str, Any]:
@@ -314,6 +346,75 @@ def audit_dataset_endpoint(req: DatasetAuditRequest):
     if not req.full_text.strip():
         raise HTTPException(status_code=400, detail="full_text is required.")
     return dataset_audit.audit_dataset(req.full_text)
+
+
+@app.get("/api/audit/pdf-highlight")
+def audit_pdf_highlight(id: str, page: int, boxes: str = "[]"):
+    """Serve the full stored PDF with highlight annotations for one finding."""
+    data = storage.get_pdf(id)
+    if not data:
+        raise HTTPException(status_code=404, detail="No PDF stored for this paper.")
+    try:
+        parsed = _json.loads(boxes or "[]")
+        if not isinstance(parsed, list):
+            parsed = []
+    except Exception:
+        parsed = []
+
+    try:
+        import fitz
+        doc = fitz.open(stream=data, filetype="pdf")
+        page_index = max(0, min(page - 1, doc.page_count - 1))
+        pdf_page = doc[page_index]
+        first_rect = None
+        for box in parsed[:20]:
+            rect = fitz.Rect(float(box["x0"]), float(box["y0"]), float(box["x1"]), float(box["y1"]))
+            if first_rect is None:
+                first_rect = rect
+            annot = pdf_page.add_highlight_annot(rect)
+            annot.set_colors(stroke=(1, 0.86, 0.05))
+            annot.update(opacity=0.45)
+        if first_rect is not None:
+            left = max(0, first_rect.x0 - 40)
+            top = max(0, pdf_page.rect.height - max(0, first_rect.y0 - 90))
+            doc.xref_set_key(
+                doc.pdf_catalog(),
+                "OpenAction",
+                f"[{doc.page_xref(page_index)} 0 R /XYZ {left:.2f} {top:.2f} 1.5]",
+            )
+        out = doc.tobytes(garbage=4, deflate=True)
+        doc.close()
+        return Response(content=out, media_type="application/pdf",
+                        headers={"Content-Disposition": 'inline; filename="paper-highlighted.pdf"'})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Could not highlight PDF: {e}")
+
+
+@app.post("/api/audit/statistical-recompute")
+def statistical_recompute(req: StatisticalRecomputeRequest):
+    if not (req.full_text or "").strip():
+        raise HTTPException(status_code=400, detail="No full text available to audit.")
+    try:
+        from auditor.core import audit_pdf_bytes, audit_text
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Statistical auditor is unavailable: {e}")
+
+    pdf_bytes = storage.get_pdf(req.paper_id or "") if req.paper_id else None
+    if pdf_bytes:
+        result = audit_pdf_bytes(pdf_bytes, source=req.title or req.paper_id or "uploaded PDF", tolerance=req.tolerance)
+        findings = result["findings"]
+    else:
+        text_findings = audit_text(req.full_text, tolerance=req.tolerance)
+        findings = [finding.to_dict() for finding in text_findings]
+    no_findings_reason = _no_statistical_findings_reason(req.full_text) if not findings else ""
+    return {
+        "paper_id": req.paper_id,
+        "title": req.title,
+        "claim_count": len(findings),
+        "mismatch_count": sum(1 for finding in findings if finding["status"] == "mismatch"),
+        "no_findings_reason": no_findings_reason,
+        "findings": findings,
+    }
 
 
 # ── storage access ────────────────────────────────────────────────────────────

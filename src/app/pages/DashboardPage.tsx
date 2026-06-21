@@ -21,11 +21,11 @@ export function DashboardPage() {
   const key = paper?.id || "";
 
   const built: Built[] = [
+    { page: "recompute", label: "Statistical Recompute", icon: Calculator, audit: null },
     { page: "references", label: "Reference Integrity", icon: BookMarked, audit: s.refAudits[key] },
     { page: "methods", label: "Methods ↔ Claims", icon: GitCompare, audit: s.methodsAudits[key] },
   ];
   const comingSoon: { label: string; icon: any }[] = [
-    { label: "Statistical Recompute", icon: Calculator },
     { label: "Numerical Consistency", icon: Hash },
     { label: "Image Forensics", icon: ImageIcon },
   ];
