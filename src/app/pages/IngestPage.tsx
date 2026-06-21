@@ -45,20 +45,6 @@ export function IngestPage() {
   return (
     <div className="space-y-4">
       <Card className="p-5">
-        <div className="flex items-start gap-3">
-          <div className="rounded-lg bg-primary/10 p-2.5"><Upload className="size-5 text-primary" /></div>
-          <div className="space-y-1">
-            <h2 className="text-base font-semibold">Ingest the paper under audit</h2>
-            <p className="text-sm text-muted-foreground">
-              Upload a PDF, pull by DOI, search by name, or fetch any paper URL via Browserbase. AuData
-              extracts the full text, detects sections, tables and figures, and resolves clean metadata —
-              ready for the detection agents.
-            </p>
-          </div>
-        </div>
-      </Card>
-
-      <Card className="p-5">
         <Tabs defaultValue="upload">
           <TabsList className="mb-4">
             <TabsTrigger value="upload"><Upload className="size-4 mr-1.5" />Upload PDF</TabsTrigger>
