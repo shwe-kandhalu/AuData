@@ -188,12 +188,6 @@ export function ImageForensicsPage() {
               <div key={idx} className="border rounded-md p-4 space-y-2">
                 <div className="text-sm font-medium text-muted-foreground">Figure {idx + 1}</div>
                 <div className="grid grid-cols-2 gap-2 text-xs">
-                  {fig.ela_output_path && (
-                    <div>
-                      <div className="text-muted-foreground">ELA Analysis</div>
-                      <a href={`${apiConfig.baseUrl}/image-forensics/image?filepath=${encodeURIComponent(fig.ela_output_path)}`} target="_blank" className="text-blue-600 hover:underline">View overlay</a>
-                    </div>
-                  )}
                   {fig.copy_move_result && (
                     <div>
                       <div className="text-muted-foreground">Copy-Move Detection</div>
