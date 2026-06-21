@@ -27,7 +27,7 @@ from typing import Any, Dict, List, Optional
 import requests
 from fastapi import FastAPI, HTTPException, UploadFile, File, Header, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
 
 from . import settings, ingest, browserbase_fetch, storage, fulltext, llm, dataset_audit
@@ -887,6 +887,22 @@ def reference_integrity_check_paper_stream(req: CheckPaperRequest):
                 return
 
     return StreamingResponse(_gen(), media_type="text/event-stream")
+
+
+@app.get("/api/forensics/image")
+def forensics_image(path: str):
+    """Serve a forensics image (extracted figure or overlay) by absolute path,
+    sandboxed to the forensics output directory so figures/overlays can render."""
+    root = (Path.home() / ".audata" / "forensics").resolve()
+    try:
+        p = Path(path).resolve()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Bad path.")
+    if p != root and root not in p.parents:
+        raise HTTPException(status_code=403, detail="Path outside forensics dir.")
+    if not p.is_file():
+        raise HTTPException(status_code=404, detail="Image not found.")
+    return FileResponse(str(p))
 
 
 class ImageForensicsRequest(BaseModel):

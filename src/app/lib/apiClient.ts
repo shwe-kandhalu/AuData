@@ -1364,6 +1364,9 @@ export type ImageFinding = {
   candidate_figure: string;
   similarity_score: number;
   severity: "high" | "moderate" | "low";
+  hash_distance?: number;
+  target_metadata?: { page?: number; image_index?: number };
+  candidate_metadata?: { page?: number; image_index?: number };
 };
 
 export type ImageForensicsSummary = {

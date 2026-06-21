@@ -89,7 +89,6 @@ function normalize(key: string, d: any): Norm | null {
       const cm = r.copy_move_result || {}; const sp = r.splice_result || {};
       if (cm.severity && !["low", "none"].includes(cm.severity)) items.push({ title: `Copy-move in ${fig}`, severity: mapSev(cm.severity), detail: "Cloned region detected within the figure." });
       if (sp.severity && !["low", "none"].includes(sp.severity)) items.push({ title: `Splice boundary in ${fig}`, severity: mapSev(sp.severity), detail: "Possible splice / edited boundary." });
-      if (typeof r.ai_generated_score === "number" && r.ai_generated_score >= 0.7) items.push({ title: `Possibly AI-generated (${fig})`, severity: "medium", detail: `heuristic score ${r.ai_generated_score.toFixed(2)} (placeholder detector)` });
       const vlm = r.vlm_result;
       if (vlm && vlm.verdict && vlm.verdict !== "clean" && (vlm.confidence || 0) >= 0.5) {
         items.push({ title: vlm.verdict === "ai_generated" ? `Vision model: possibly AI-generated (${fig})` : `Vision model: manipulation suspected (${fig})`,

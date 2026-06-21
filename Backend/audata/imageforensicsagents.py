@@ -891,7 +891,6 @@ def run_single_figure_forensics(target_figures: List[Dict[str, Any]], output_roo
             ela_path = ela_analysis(image_path, forensic_dir)
             copy_move = copy_move_detection(image_path, forensic_dir)
             splice_result = detect_splice_boundaries(image_path, forensic_dir)
-            ai_score = ai_generated_placeholder_score(image_path)
             vlm_result = vlm_assess(image_path) if use_vlm else None
 
             results.append({
@@ -900,8 +899,6 @@ def run_single_figure_forensics(target_figures: List[Dict[str, Any]], output_roo
                 "ela_output_path": ela_path,
                 "copy_move_result": copy_move,
                 "splice_result": splice_result,
-                "ai_generated_score": ai_score,
-                "ai_detector_note": "Heuristic placeholder only; replace with a validated detector before using as evidence.",
                 "vlm_result": vlm_result,
             })
         except Exception as e:
@@ -938,10 +935,6 @@ def summarize_forensics_results(results: List[Dict[str, Any]]) -> Dict[str, Any]
             by_severity[sev] = by_severity.get(sev, 0) + 1
             if sev in ("high", "moderate"):
                 by_flag["splice_detected"] = by_flag.get("splice_detected", 0) + 1
-
-        ai_score = r.get("ai_generated_score")
-        if ai_score is not None and ai_score >= 0.7:
-            by_flag["ai_generated_risk"] = by_flag.get("ai_generated_risk", 0) + 1
 
         vlm = r.get("vlm_result") or {}
         if vlm.get("verdict") in ("manipulation_suspected", "ai_generated") and (vlm.get("confidence") or 0) >= 0.5:

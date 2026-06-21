@@ -1,31 +1,41 @@
 // AuData — Image Forensics (Detect stage)
-// Screens figures for manipulation, duplication, and AI generation.
-// Runs copy-move detection, ELA, splicing detection, and cross-paper reuse comparison.
+// Screens figures for manipulation and cross-paper reuse, and highlights the
+// specific suspicious or matching regions (copy-move, splice, reuse) with the
+// actual figure + overlay shown inline. Findings-first, no opaque risk scores.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
-import { Input } from "../components/ui/input";
-import {
-  Image, Play, Loader2, X, CheckCircle, AlertCircle, Download, Search,
-} from "lucide-react";
+import { Image as ImageIcon, Play, Loader2, X, CheckCircle, Copy, Scissors, Sparkles, Files } from "lucide-react";
 import { useStore } from "../lib/store";
 import {
   ImageForensicsService, AuditStore, apiConfig, type ImageForensicsSummary, type ImageForensicsReport,
 } from "../lib/apiClient";
 
 const SEV_STYLE: Record<string, string> = {
-  high: "bg-red-500/10 text-red-600 border-red-500/30",
-  moderate: "bg-amber-500/10 text-amber-600 border-amber-500/30",
-  low: "bg-sky-500/10 text-sky-600 border-sky-500/30",
+  high: "border-red-500/30 bg-red-500/10 text-red-600",
+  moderate: "border-amber-500/30 bg-amber-500/10 text-amber-600",
+  low: "border-sky-500/30 bg-sky-500/10 text-sky-600",
+};
+const SEV_DOT: Record<string, string> = { high: "bg-red-500", moderate: "bg-amber-500", low: "bg-sky-500" };
+const SEV_RANK: Record<string, number> = { high: 3, moderate: 2, low: 1 };
+
+type Sev = "high" | "moderate" | "low";
+type Thumb = { url: string; caption: string };
+type Finding = {
+  key: string;
+  kind: "copy_move" | "splice" | "vlm" | "cross_paper";
+  label: string;
+  icon: any;
+  severity: Sev;
+  page?: number;
+  description: string;
+  thumbs: Thumb[];
 };
 
-const SEV_DOT: Record<string, string> = {
-  high: "bg-red-500",
-  moderate: "bg-amber-500",
-  low: "bg-sky-500",
-};
+const imgUrl = (p?: string | null) =>
+  p ? `${apiConfig.baseUrl}/forensics/image?path=${encodeURIComponent(p)}` : "";
 
 export function ImageForensicsPage() {
   const s = useStore();
@@ -36,7 +46,6 @@ export function ImageForensicsPage() {
   const [report, setReport] = useState<ImageForensicsReport | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState("");
   const [useVlm, setUseVlm] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -45,29 +54,20 @@ export function ImageForensicsPage() {
     let cancelled = false;
     const apply = (a: any) => {
       if (cancelled) return;
-      if (a) {
-        setSummary(a.summary || null);
-        setReport(a.report || null);
-        setNote(a.note || null);
-      } else {
-        setSummary(null);
-        setReport(null);
-        setNote(null);
-      }
+      setSummary(a?.summary || null);
+      setReport(a?.report || null);
+      setNote(a?.note || null);
     };
     const local = s.imageAudits?.[auditKey];
-    if (local) {
-      apply(local);
-    } else if (paper) {
+    if (local) apply(local);
+    else if (paper) {
       apply(null);
       AuditStore.getAll(paper.id).then((audits) => {
         if (cancelled || !audits.images) return;
         s.setImageAudits?.({ ...s.imageAudits, [auditKey]: audits.images });
         apply(audits.images);
       });
-    } else {
-      apply(null);
-    }
+    } else apply(null);
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auditKey]);
@@ -81,232 +81,203 @@ export function ImageForensicsPage() {
 
   async function run() {
     if (!paper) { setError("Ingest a paper first."); return; }
-    if (!paper.has_pdf) { setError("Paper has no PDF — image extraction requires full PDF."); return; }
-    
-    setError(null);
-    setNote(null);
-    setSummary(null);
-    setReport(null);
-    setRunning(true);
-    
+    if (!paper.has_pdf) { setError("Paper has no PDF — figure extraction requires the full PDF."); return; }
+    setError(null); setNote(null); setSummary(null); setReport(null); setRunning(true);
     const ac = new AbortController();
     abortRef.current = ac;
-    
     try {
       const out = await ImageForensicsService.checkPaper(paper.id, { signal: ac.signal, useVlm });
-      setSummary(out.summary);
-      setReport(out.report);
+      setSummary(out.summary); setReport(out.report);
       if (out.note) setNote(out.note);
       persist({ summary: out.summary, report: out.report, note: out.note });
     } catch (e: any) {
-      if (e?.name !== "AbortError") {
-        setError(e?.message || "Image forensics check failed.");
-      }
-    } finally {
-      setRunning(false);
-      abortRef.current = null;
-    }
+      if (e?.name !== "AbortError") setError(e?.message || "Image forensics check failed.");
+    } finally { setRunning(false); abortRef.current = null; }
   }
 
-  const findings = report?.cross_paper_findings || [];
-  const shown = findings.filter((f) => {
-    const searchStr = filter.toLowerCase();
-    return (
-      f.target_figure.toLowerCase().includes(searchStr) ||
-      f.candidate_figure.toLowerCase().includes(searchStr) ||
-      f.flag_type.toLowerCase().includes(searchStr)
-    );
-  });
+  // Build a flat, findings-first list — one card per suspicious or matching aspect.
+  const findings = useMemo<Finding[]>(() => {
+    if (!report) return [];
+    const out: Finding[] = [];
+    const figs: any[] = report.figure_forensics || [];
+    figs.forEach((f, i) => {
+      if (f?.status === "error") return;
+      const page: number | undefined = f?.metadata?.page;
+      const figThumb: Thumb = { url: imgUrl(f.image_path), caption: page ? `Figure · page ${page}` : "Figure" };
+      const ela: Thumb | null = f.ela_output_path ? { url: imgUrl(f.ela_output_path), caption: "Error-level analysis" } : null;
+
+      const cm = f.copy_move_result;
+      if (cm && (cm.severity === "high" || cm.severity === "moderate")) {
+        out.push({
+          key: `cm-${i}`, kind: "copy_move", label: "Cloned / copy-move region", icon: Copy,
+          severity: cm.severity, page,
+          description: "The same content appears in more than one place within this figure — a sign of cloning, duplication, or retouching. The matched regions are highlighted in the overlay.",
+          thumbs: [figThumb, cm.overlay_path ? { url: imgUrl(cm.overlay_path), caption: "Matched regions highlighted" } : null, ela].filter(Boolean) as Thumb[],
+        });
+      }
+      const sp = f.splice_result;
+      if (sp && (sp.severity === "high" || sp.severity === "moderate")) {
+        out.push({
+          key: `sp-${i}`, kind: "splice", label: "Possible inserted / spliced region", icon: Scissors,
+          severity: sp.severity, page,
+          description: "Sharp boundary discontinuities suggest a region may have been inserted or pasted from elsewhere. The suspected boundary is highlighted in the overlay.",
+          thumbs: [figThumb, sp.overlay_path ? { url: imgUrl(sp.overlay_path), caption: "Suspected boundary" } : null, ela].filter(Boolean) as Thumb[],
+        });
+      }
+      const v = f.vlm_result;
+      if (v && (v.verdict === "manipulation_suspected" || v.verdict === "ai_generated")) {
+        out.push({
+          key: `vlm-${i}`, kind: "vlm", label: v.verdict === "ai_generated" ? "Possibly AI-generated (vision model)" : "Manipulation suspected (vision model)",
+          icon: Sparkles, severity: "moderate", page,
+          description: v.reason || "A vision model flagged this figure as potentially manipulated or synthetic. Treat as a lead for manual review, not a verdict.",
+          thumbs: [figThumb],
+        });
+      }
+    });
+
+    // Cross-paper reuse (perceptual-hash) — show the two figures side by side.
+    (report.cross_paper_findings || []).forEach((cf, i) => {
+      const tp = cf.target_metadata?.page, cp = cf.candidate_metadata?.page;
+      out.push({
+        key: `xp-${i}`, kind: "cross_paper", label: "Cross-paper figure reuse", icon: Files,
+        severity: (cf.severity as Sev) || "moderate", page: tp,
+        description: "A near-identical figure appears in another paper in your library — possible image reuse across publications. Compare the two side by side.",
+        thumbs: [
+          { url: imgUrl(cf.target_figure), caption: tp ? `This paper · page ${tp}` : "This paper" },
+          { url: imgUrl(cf.candidate_figure), caption: cp ? `Other paper · page ${cp}` : "Other paper" },
+        ],
+      });
+    });
+
+    // Cross-paper reuse (visual embedding match), if vector search ran.
+    const vfs: any[] = (report as any).vector_findings || [];
+    vfs.forEach((vf, i) => {
+      out.push({
+        key: `vec-${i}`, kind: "cross_paper", label: "Cross-paper reuse (visual match)", icon: Files,
+        severity: (vf.severity as Sev) || "moderate", page: undefined,
+        description: "A figure here is visually very similar to one in another paper (semantic embedding match) — a possible reuse the perceptual hash may miss.",
+        thumbs: [
+          { url: imgUrl(vf.query_panel), caption: "This paper" },
+          { url: imgUrl(vf.matched_panel), caption: vf.matched_page ? `Other paper · page ${vf.matched_page}` : "Other paper" },
+        ],
+      });
+    });
+
+    return out.sort((a, b) => (SEV_RANK[b.severity] || 0) - (SEV_RANK[a.severity] || 0));
+  }, [report]);
+
+  const analyzed = report?.num_target_figures ?? (report?.figure_forensics?.length || 0);
+  const crossPaper = (report?.cross_paper_findings?.length || 0) + ((report as any)?.vector_findings?.length || 0);
+  const sevCounts = useMemo(() => {
+    const m: Record<string, number> = {};
+    findings.forEach((f) => { m[f.severity] = (m[f.severity] || 0) + 1; });
+    return m;
+  }, [findings]);
 
   return (
     <div className="space-y-4">
-      <Card className="p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <Image className="w-6 h-6 text-indigo-600" />
-            <div>
-              <h2 className="text-xl font-semibold">Image Forensics</h2>
-              <p className="text-sm text-muted-foreground">Screen figures for manipulation, duplication, and AI generation</p>
-            </div>
-          </div>
-          <Badge variant={running ? "secondary" : "outline"} className="gap-1">
-            {running && <Loader2 className="w-3 h-3 animate-spin" />}
-            {running ? "Running..." : "Ready"}
-          </Badge>
-        </div>
-
-        <div className="flex items-center gap-3 mb-6">
-          <Button
-            onClick={run}
-            disabled={!paper || running}
-            className="gap-2"
-          >
-            <Play className="w-4 h-4" />
-            {running ? "Analyzing..." : "Analyze Figures"}
-          </Button>
-          <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground" title="Also ask a vision model whether each figure looks manipulated or AI-generated (slower; needs a local vision model)">
-            <input type="checkbox" checked={useVlm} onChange={(e) => setUseVlm(e.target.checked)} className="size-3.5" />
-            AI / manipulation check (VLM)
-          </label>
-          {running && (
-            <Button
-              variant="outline"
-              onClick={() => abortRef.current?.abort()}
-              className="gap-2"
-            >
-              <X className="w-4 h-4" />
-              Cancel
-            </Button>
-          )}
-        </div>
-
-        {error && (
-          <div className="p-3 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm mb-4">
-            {error}
-          </div>
-        )}
-
-        {note && (
-          <div className="p-3 bg-blue-50 border border-blue-200 rounded-md text-blue-700 text-sm mb-4">
-            {note}
-          </div>
-        )}
-
-        {summary && (
-          <div className="grid grid-cols-4 gap-4 mb-6">
-            <div className="p-3 bg-slate-50 rounded-md border border-slate-200">
-              <div className="text-xs text-muted-foreground mb-1">Total Figures</div>
-              <div className="text-2xl font-bold">{summary.total_images}</div>
-            </div>
-            <div className="p-3 bg-red-50 rounded-md border border-red-200">
-              <div className="text-xs text-red-600 mb-1">Flagged</div>
-              <div className="text-2xl font-bold text-red-600">{summary.flagged}</div>
-            </div>
-            <div className="p-3 bg-amber-50 rounded-md border border-amber-200">
-              <div className="text-xs text-amber-600 mb-1">High Severity</div>
-              <div className="text-2xl font-bold text-amber-600">{summary.by_severity?.high || 0}</div>
-            </div>
-            <div className="p-3 bg-emerald-50 rounded-md border border-emerald-200">
-              <div className="text-xs text-emerald-600 mb-1">Copy-Move Detected</div>
-              <div className="text-2xl font-bold text-emerald-600">{summary.by_flag?.copy_move_detected || 0}</div>
-            </div>
-          </div>
-        )}
-
-        {report?.figure_forensics && report.figure_forensics.length > 0 && (
-          <div className="space-y-3 mb-6">
-            <h3 className="font-semibold text-sm">Figure-by-Figure Forensics</h3>
-            {report.figure_forensics.map((fig, idx) => (
-              <div key={idx} className="border rounded-md p-4 space-y-2">
-                <div className="text-sm font-medium text-muted-foreground">Figure {idx + 1}</div>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  {fig.ela_output_path && (
-                    <div>
-                      <div className="text-muted-foreground">ELA Analysis</div>
-                      <a href={fig.ela_output_path} className="text-blue-600 hover:underline">View overlay</a>
-                    </div>
-                  )}
-                  {fig.copy_move_result && (
-                    <div>
-                      <div className="text-muted-foreground">Copy-Move Detection</div>
-                      <div className="space-y-1">
-                        <div>Severity: <span className={`font-medium ${fig.copy_move_result.severity === 'high' ? 'text-red-600' : fig.copy_move_result.severity === 'moderate' ? 'text-amber-600' : 'text-slate-600'}`}>{fig.copy_move_result.severity}</span></div>
-                        <div>Matches: {fig.copy_move_result.num_suspicious_matches || 0}</div>
-                        {fig.copy_move_result.overlay_path && (
-                          <a href={fig.copy_move_result.overlay_path} className="text-blue-600 hover:underline">View overlay</a>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                  {fig.splice_result && (
-                    <div>
-                      <div className="text-muted-foreground">Splice Detection</div>
-                      <div className="space-y-1">
-                        <div>Severity: <span className={`font-medium ${fig.splice_result.severity === 'high' ? 'text-red-600' : fig.splice_result.severity === 'moderate' ? 'text-amber-600' : 'text-slate-600'}`}>{fig.splice_result.severity}</span></div>
-                        <div>Score: {fig.splice_result.score?.toFixed(3)}</div>
-                        {fig.splice_result.overlay_path && (
-                          <a href={fig.splice_result.overlay_path} className="text-blue-600 hover:underline">View overlay</a>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                  {fig.ai_generated_score !== undefined && (
-                    <div>
-                      <div className="text-muted-foreground">AI-Generated Risk (heuristic)</div>
-                      <div className={`font-medium ${fig.ai_generated_score >= 0.7 ? 'text-red-600' : fig.ai_generated_score >= 0.5 ? 'text-amber-600' : 'text-emerald-600'}`}>
-                        {(fig.ai_generated_score * 100).toFixed(1)}%
-                      </div>
-                    </div>
-                  )}
-                  {fig.vlm_result && (
-                    <div>
-                      <div className="text-muted-foreground">Vision model</div>
-                      <div className={`font-medium ${fig.vlm_result.verdict === 'clean' ? 'text-emerald-600' : 'text-red-600'}`}>
-                        {fig.vlm_result.verdict === 'ai_generated' ? 'Possibly AI-generated' : fig.vlm_result.verdict === 'manipulation_suspected' ? 'Manipulation suspected' : 'Clean'}
-                        {typeof fig.vlm_result.confidence === 'number' ? ` (${(fig.vlm_result.confidence * 100).toFixed(0)}%)` : ''}
-                      </div>
-                      {fig.vlm_result.reason && <div className="text-[11px] text-muted-foreground">{fig.vlm_result.reason}</div>}
-                    </div>
-                  )}
-                </div>
+      <Card className="p-4">
+        <div className="flex items-start gap-3">
+          <div className="shrink-0 rounded-lg bg-primary/10 p-2"><ImageIcon className="size-5 text-primary" /></div>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold">Image Forensics</h2>
+                {paper ? (
+                  <p className="truncate text-xs text-muted-foreground">
+                    Screening figures for cloning, splicing, and cross-paper reuse in{" "}
+                    <span className="font-medium text-foreground">{paper.title || paper.id}</span>
+                  </p>
+                ) : <p className="text-xs text-amber-600">No paper ingested — go to the Ingest tab first.</p>}
               </div>
-            ))}
-          </div>
-        )}
-
-        {findings && shown.length > 0 && (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2 mb-3">
-              <Search className="w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Filter findings..."
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-                className="flex-1"
-              />
-              <span className="text-sm text-muted-foreground">{shown.length} of {findings.length}</span>
+              <div className="flex items-center gap-3">
+                <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground" title="Also ask a local vision model whether each figure looks manipulated or AI-generated (slower).">
+                  <input type="checkbox" checked={useVlm} onChange={(e) => setUseVlm(e.target.checked)} className="size-3.5" />
+                  Vision-model check
+                </label>
+                {running ? (
+                  <Button size="sm" variant="outline" onClick={() => abortRef.current?.abort()}><X className="mr-1.5 size-4" />Cancel</Button>
+                ) : (
+                  <Button size="sm" onClick={run} disabled={!paper}><Play className="mr-1.5 size-4" />Analyze figures</Button>
+                )}
+              </div>
             </div>
+            {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+            {note && <p className="mt-2 text-xs text-muted-foreground">{note}</p>}
+            {running && <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />Extracting figures and comparing… this can take a minute.</p>}
+          </div>
+        </div>
+      </Card>
 
-            <div className="space-y-2 max-h-96 overflow-y-auto">
-              {shown.map((f, i) => (
-                <div key={i} className={`p-3 border rounded-md ${SEV_STYLE[f.severity] || "bg-slate-50"}`}>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className={`w-2 h-2 rounded-full ${SEV_DOT[f.severity]}`} />
-                        <span className="font-medium text-sm">{f.flag_type}</span>
-                        <Badge variant="outline" className="text-xs">{f.severity}</Badge>
-                      </div>
-                      <div className="text-xs space-y-1">
-                        <div><strong>Similarity:</strong> {(f.similarity_score * 100).toFixed(1)}%</div>
-                        <div className="text-ellipsis overflow-hidden">
-                          <strong>Target:</strong> {f.target_figure.split("/").pop()}
-                        </div>
-                        <div className="text-ellipsis overflow-hidden">
-                          <strong>Candidate:</strong> {f.candidate_figure.split("/").pop()}
-                        </div>
+      {summary && (
+        <>
+          <Card className="p-3">
+            <div className="flex flex-wrap items-center gap-4">
+              <Stat label="Figures analyzed" value={analyzed} />
+              <Stat label="Suspicious findings" value={findings.length} tone={findings.length ? "red" : "green"} />
+              <Stat label="Cross-paper matches" value={crossPaper} tone={crossPaper ? "red" : undefined} />
+              {(["high", "moderate", "low"] as Sev[]).map((k) => sevCounts[k] ? (
+                <Badge key={k} variant="outline" className={SEV_STYLE[k] + " capitalize"}>{sevCounts[k]} {k}</Badge>
+              ) : null)}
+            </div>
+          </Card>
+
+          {findings.length > 0 ? (
+            <div className="space-y-3">
+              {findings.map((f) => {
+                const Icon = f.icon;
+                return (
+                  <Card key={f.key} className="overflow-hidden">
+                    <div className={`flex flex-wrap items-center gap-2 border-l-4 p-3 ${f.severity === "high" ? "border-l-red-500" : f.severity === "moderate" ? "border-l-amber-500" : "border-l-sky-500"}`}>
+                      <span className={`size-2 rounded-full ${SEV_DOT[f.severity]}`} />
+                      <Icon className="size-4 text-muted-foreground" />
+                      <span className="text-sm font-medium">{f.label}</span>
+                      <Badge variant="outline" className={SEV_STYLE[f.severity] + " capitalize text-[10px]"}>{f.severity}</Badge>
+                      {f.page != null && <Badge variant="outline" className="bg-muted text-[10px]">page {f.page}</Badge>}
+                    </div>
+                    <div className="px-4 pb-4">
+                      <p className="text-sm text-muted-foreground">{f.description}</p>
+                      <div className="mt-3 flex flex-wrap gap-3">
+                        {f.thumbs.map((t, j) => (
+                          <a key={j} href={t.url} target="_blank" rel="noreferrer" className="group block">
+                            <div className="overflow-hidden rounded-md border bg-muted/40">
+                              <img src={t.url} alt={t.caption} loading="lazy"
+                                className="max-h-44 w-auto object-contain transition group-hover:opacity-90"
+                                onError={(e) => { (e.currentTarget.parentElement?.parentElement as HTMLElement)?.style.setProperty("display", "none"); }} />
+                            </div>
+                            <div className="mt-1 max-w-[12rem] truncate text-[10px] text-muted-foreground" title={t.caption}>{t.caption}</div>
+                          </a>
+                        ))}
                       </div>
                     </div>
-                  </div>
-                </div>
-              ))}
+                  </Card>
+                );
+              })}
             </div>
-          </div>
-        )}
+          ) : (
+            <Card className="flex items-center gap-2 p-6 text-sm text-emerald-600">
+              <CheckCircle className="size-5" />
+              No manipulation or cross-paper reuse detected across {analyzed} figure{analyzed === 1 ? "" : "s"}.
+            </Card>
+          )}
+        </>
+      )}
 
-        {summary && shown.length === 0 && findings.length === 0 && (
-          <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-md text-emerald-700 flex items-center gap-2">
-            <CheckCircle className="w-5 h-5" />
-            <span className="text-sm">No suspicious figures detected.</span>
-          </div>
-        )}
+      {!summary && !running && !error && (
+        <Card className="p-6 text-center text-sm text-muted-foreground">
+          Click <span className="font-medium text-foreground">Analyze figures</span> to extract this paper's figures and screen them for cloning, splicing, and reuse in other papers in your library.
+        </Card>
+      )}
+    </div>
+  );
+}
 
-        {!summary && !running && !error && (
-          <div className="p-4 bg-slate-50 border border-slate-200 rounded-md text-slate-600 text-sm text-center">
-            Click "Analyze Figures" to screen this paper's figures for manipulation and cross-paper reuse.
-          </div>
-        )}
-      </Card>
+function Stat({ label, value, tone }: { label: string; value: number; tone?: "red" | "green" }) {
+  const c = tone === "red" ? "text-red-600" : tone === "green" ? "text-emerald-600" : "text-foreground";
+  return (
+    <div className="flex items-baseline gap-1.5">
+      <span className={`text-lg font-semibold ${c}`}>{value}</span>
+      <span className="text-xs text-muted-foreground">{label}</span>
     </div>
   );
 }

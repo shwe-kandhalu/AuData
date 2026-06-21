@@ -88,9 +88,6 @@ def _norm(key: str, d: Any) -> Dict[str, Any]:
                 items.append(_it(f"Copy-move detected", _sev(cm["severity"]), "Cloned region within the figure.", loc))
             if sp.get("severity") and sp["severity"] not in ("low", "none"):
                 items.append(_it("Splice boundary", _sev(sp["severity"]), "Possible splice / edited boundary.", loc))
-            ai = r.get("ai_generated_score")
-            if isinstance(ai, (int, float)) and ai >= 0.7:
-                items.append(_it("Possibly AI-generated", "medium", f"heuristic score {ai:.2f}", loc))
             vlm = r.get("vlm_result") or {}
             if vlm.get("verdict") and vlm["verdict"] != "clean" and (vlm.get("confidence") or 0) >= 0.5:
                 label = "possibly AI-generated" if vlm["verdict"] == "ai_generated" else "manipulation suspected"
