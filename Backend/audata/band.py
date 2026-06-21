@@ -1,34 +1,21 @@
-"""Band agent-to-agent messaging relay (gated, no-op unless configured).
+"""Band integration status.
 
-When BAND_API_KEY (+ BAND_ENDPOINT) are set, detector results emitted by the
-Fetch uAgent (agents.py) are also relayed onto a Band channel so other agents
-can subscribe. Without config this is a silent no-op, so it never breaks runs.
-
-Set BAND_ENDPOINT to the channel/publish URL and BAND_CHANNEL to the topic.
+Band is an agent-to-agent chat mesh (band-sdk); the runnable agent lives in
+audata.band_agent (`python -m audata.band_agent`). "Active" means an agent is
+registered (BAND_AGENT_ID + BAND_API_KEY) and the SDK is installed.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import os
-from typing import Any, Dict
 
 
 def available() -> bool:
-    return bool(os.getenv("BAND_API_KEY") and os.getenv("BAND_ENDPOINT"))
+    return bool(os.getenv("BAND_AGENT_ID") and os.getenv("BAND_API_KEY")
+                and importlib.util.find_spec("band"))
 
 
-def relay(topic: str, payload: Dict[str, Any]) -> bool:
-    if not available():
-        return False
-    try:
-        import requests
-        r = requests.post(
-            os.getenv("BAND_ENDPOINT"),
-            headers={"Authorization": f"Bearer {os.getenv('BAND_API_KEY')}", "Content-Type": "application/json"},
-            json={"channel": os.getenv("BAND_CHANNEL", "audata"), "topic": topic, "payload": payload},
-            timeout=8,
-        )
-        return r.status_code < 300
-    except Exception as e:
-        print(f"[audata.band] relay failed: {e}")
-        return False
+def relay(*_args, **_kwargs) -> bool:
+    # Legacy no-op: Band is a chat mesh, not an HTTP relay. Kept so callers don't break.
+    return False

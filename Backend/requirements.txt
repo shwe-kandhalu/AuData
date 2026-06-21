@@ -51,3 +51,4 @@ uagents>=0.13.0                     # Fetch.ai agent layer (python -m audata.age
 # sentence-transformers>=2.2.0      # OPTIONAL, large (~2GB w/ torch): enables Redis image vector search
 langcache>=0.1.0                    # Redis LangCache semantic cache (set LANGCACHE_SERVER_URL + LANGCACHE_CACHE_ID)
 agent-memory-client>=0.1.0         # Redis Agent Memory Server (set AGENT_MEMORY_BASE_URL)
+band-sdk[anthropic]>=1.0.0        # Band agent-to-agent mesh (python -m audata.band_agent)

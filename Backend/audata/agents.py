@@ -105,11 +105,6 @@ def build_agent() -> Agent:
             resp = AuditResponse(detector=det, ok=bool(res.get("ok")),
                                  summary=res.get("summary", {}), note=res.get("note", ""))
             await ctx.send(sender, resp)
-            try:
-                from . import band
-                band.relay(f"audata:{det}", resp.dict())
-            except Exception:
-                pass
 
     return agent
 

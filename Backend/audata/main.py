@@ -102,7 +102,8 @@ def integrations():
         "token_router": {"active": bool(_os.getenv("TOKENROUTER_API_KEY"))},
         "fetch_uagents": {"installed": _mod("uagents"), "active": bool(_os.getenv("FETCH_AGENT_MAILBOX")),
                           "note": "run `python -m audata.agents`; set FETCH_AGENT_MAILBOX for ASI:One"},
-        "band": {"active": band.available()},
+        "band": {"active": band.available(), "installed": _mod("band"),
+                 "note": "register an agent at app.band.ai/agents; set BAND_AGENT_ID+BAND_API_KEY; run python -m audata.band_agent"},
         "langcache": {"active": langcache.available(), "installed": _mod("langcache"),
                       "note": "needs REDIS_LANGCACHE_API_KEY + LANGCACHE_SERVER_URL + LANGCACHE_CACHE_ID"},
         "agent_memory": {"active": agent_memory.available(), "installed": _mod("agent_memory_client"),
@@ -127,6 +128,13 @@ def memory_search(q: str, limit: int = 5):
     if not agent_memory.available():
         raise HTTPException(status_code=400, detail="Agent Memory not configured (set AGENT_MEMORY_BASE_URL).")
     return {"memories": agent_memory.search(q, limit)}
+
+
+@app.get("/api/debug/sentry-test")
+def sentry_test():
+    """Intentionally raise so Sentry capture can be verified (returns 500)."""
+    _ = 1 / 0
+    return {"ok": True}
 
 
 @app.get("/api/models/local")
