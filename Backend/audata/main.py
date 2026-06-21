@@ -37,6 +37,21 @@ from . import imageforensicsagents as imgforensics
 from . import meta_analysis as ma
 from . import numerical as nu
 from . import report_doc
+from . import band
+
+# Sentry error monitoring — active only when SENTRY_DSN is set (no-op otherwise).
+import os as _os
+if _os.getenv("SENTRY_DSN"):
+    try:
+        import sentry_sdk
+        sentry_sdk.init(
+            dsn=_os.getenv("SENTRY_DSN"),
+            traces_sample_rate=float(_os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
+            send_default_pii=False,
+        )
+        print("[audata] Sentry initialized.")
+    except Exception as e:
+        print(f"[audata] Sentry init failed: {e}")
 
 app = FastAPI(title="AuData API", version="0.1.0")
 
@@ -54,6 +69,11 @@ app.add_middleware(
 @app.on_event("startup")
 def _startup():
     storage.init_db()
+    try:
+        from . import observability
+        observability.setup()   # Arize / Phoenix tracing (no-op unless configured)
+    except Exception as e:
+        print(f"[audata] observability setup error: {e}")
 
 
 # ── status ────────────────────────────────────────────────────────────────────
@@ -65,6 +85,29 @@ def health():
         "redis": storage.redis_status(),
         "db": storage.db_status(),
         "browserbase": {"configured": browserbase_fetch.available()},
+    }
+
+
+@app.get("/api/integrations")
+def integrations():
+    """Which sponsor integrations are active (configured) right now."""
+    def _mod(name):
+        import importlib.util
+        return importlib.util.find_spec(name) is not None
+    redis_st = storage.redis_status()
+    return {
+        "redis": {"active": redis_st.get("connected", False), **redis_st},
+        "redis_vector": {"active": bool(_os.getenv("REDIS_URL") and _os.getenv("AUDATA_IMAGE_VECTORS")),
+                          "deps": _mod("sentence_transformers"), "note": "needs REDIS_URL + sentence-transformers + AUDATA_IMAGE_VECTORS=1"},
+        "anthropic": {"active": bool(_os.getenv("ANTHROPIC_API_KEY"))},
+        "browserbase": {"active": browserbase_fetch.available()},
+        "sentry": {"active": bool(_os.getenv("SENTRY_DSN")), "installed": _mod("sentry_sdk")},
+        "token_router": {"active": bool(_os.getenv("TOKENROUTER_API_KEY"))},
+        "arize_phoenix": {"active": bool(_os.getenv("ARIZE_API_KEY") or _os.getenv("PHOENIX_COLLECTOR_ENDPOINT") or _os.getenv("AUDATA_PHOENIX")),
+                          "installed": _mod("openinference.instrumentation.langchain")},
+        "fetch_uagents": {"installed": _mod("uagents"), "active": bool(_os.getenv("FETCH_AGENT_MAILBOX")),
+                          "note": "run `python -m audata.agents`; set FETCH_AGENT_MAILBOX for ASI:One"},
+        "band": {"active": band.available()},
     }
 
 

@@ -29,6 +29,12 @@ def get_model():
 
 
 def get_redis_client(ssl_override=None, username_override="__USE_ENV__"):
+    # Prefer the single REDIS_URL used by the rest of the app (storage/cache),
+    # so one connection string drives both KV cache and vector search.
+    url = os.getenv("REDIS_URL")
+    if url:
+        return redis.from_url(url, decode_responses=False, socket_connect_timeout=3, socket_timeout=3)
+
     ssl_value = os.getenv("REDIS_SSL", "false").lower() in {"1", "true", "yes"}
     if ssl_override is not None:
         ssl_value = ssl_override

@@ -1054,6 +1054,24 @@ def run_image_integrity_agent_from_papers(
     print("Running Paper A image-forensics checks...")
     figure_forensics = run_single_figure_forensics(target_figures, output_root, use_vlm=use_vlm)
 
+    # Redis vector search (embedding-based cross-paper reuse). Gated on a real
+    # Redis (REDIS_URL), the embedding model, and AUDATA_IMAGE_VECTORS=1.
+    vector_findings = []
+    if os.getenv("AUDATA_IMAGE_VECTORS", "").lower() in ("1", "true", "yes") and os.getenv("REDIS_URL"):
+        try:
+            from . import image_vector_store as ivs
+            ivs.create_index(overwrite=False)
+            panels = [{"panel_path": f["image_path"], "page": f.get("page", 0),
+                       "source_figure": str(f.get("xref", "")), "panel_id": f"fig_{i + 1}"}
+                      for i, f in enumerate(target_figures) if f.get("image_path")]
+            pid = target_paper.get("id", "")
+            matches = ivs.search_many_panels(pid, panels, top_k=5)
+            vector_findings = [m for m in matches if m.get("paper_id") and m.get("paper_id") != pid]
+            ivs.store_many_panels(pid, panels)   # index this paper for future cross-paper checks
+            print(f"[imgforensics] Redis vector search: {len(vector_findings)} cross-paper matches.")
+        except Exception as e:
+            print(f"[imgforensics] vector search skipped: {e}")
+
     report = {
         "agent": "image_integrity_agent_from_papers",
         "target_paper_id": target_paper.get("id"),
@@ -1067,6 +1085,7 @@ def run_image_integrity_agent_from_papers(
         "cross_paper_findings": cross_paper_findings,
         "closest_cross_paper_pairs": closest_pairs,
         "figure_forensics": figure_forensics,
+        "vector_findings": vector_findings,
     }
 
     report_path = output_root / "image_integrity_report.json"

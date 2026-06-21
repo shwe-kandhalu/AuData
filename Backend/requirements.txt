@@ -44,3 +44,11 @@ playwright==1.60.0
 # --- AuData storage ---
 redis==8.0.0
 ImageHash>=4.3.1
+
+# --- Sponsor integrations ---
+sentry-sdk[fastapi]>=2.0.0          # error monitoring (set SENTRY_DSN)
+arize-otel>=0.7.0                   # Arize tracing (set ARIZE_API_KEY + ARIZE_SPACE_ID)
+openinference-instrumentation-langchain>=0.1.0
+opentelemetry-exporter-otlp-proto-http>=1.20.0
+uagents>=0.13.0                     # Fetch.ai agent layer (python -m audata.agents)
+# sentence-transformers>=2.2.0      # OPTIONAL, large (~2GB w/ torch): enables Redis image vector search
