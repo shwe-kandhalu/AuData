@@ -248,12 +248,12 @@ export function SessionsPanel() {
               <FolderOpen className="size-3 shrink-0 text-muted-foreground" />
               <div className="flex-1 truncate">{m.title}</div>
               <button onClick={(e) => onRename(m.id, m.title, e)} title="Rename"
-                className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground">
-                <Pencil className="size-3" />
+                className="shrink-0 opacity-60 hover:opacity-100 text-muted-foreground hover:text-foreground">
+                <Pencil className="size-3.5" />
               </button>
               <button onClick={(e) => onDelete(m.id, e)} title="Delete"
-                className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive">
-                <Trash2 className="size-3" />
+                className="shrink-0 opacity-60 hover:opacity-100 text-muted-foreground hover:text-destructive">
+                <Trash2 className="size-3.5" />
               </button>
             </div>
           );

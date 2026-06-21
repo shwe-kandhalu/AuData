@@ -282,7 +282,7 @@ function loadPage(): PageId {
     const v = localStorage.getItem(PAGE_STORAGE_KEY) as PageId | null;
     if (v && VALID_PAGES.includes(v)) return v;
   } catch { /* localStorage unavailable (private mode, etc.) */ }
-  return "dashboard";
+  return "audits";
 }
 
 export function StoreProvider({ children }: { children: ReactNode }) {

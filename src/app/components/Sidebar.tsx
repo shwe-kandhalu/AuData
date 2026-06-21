@@ -3,7 +3,7 @@ import { Card } from "./ui/card";
 import { Label } from "./ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Separator } from "./ui/separator";
-import { FileText, X, Microscope, ShieldCheck, Loader2, Users, LayoutDashboard, FileInput, Calculator, Hash, Image as ImageIcon, GitCompare, BookMarked, Gauge } from "lucide-react";
+import { FileText, X, Microscope, ShieldCheck, Loader2, FolderOpen, LayoutDashboard, FileInput, Calculator, Hash, Image as ImageIcon, GitCompare, BookMarked, Gauge } from "lucide-react";
 import { useStore, PageId } from "../lib/store";
 import { SessionsPanel } from "./SessionsPanel";
 
@@ -36,8 +36,8 @@ function formatModelName(m: string): string {
 
 // Audit pipeline, grouped: Manage → Ingest → Detect → Reliability → Report.
 const NAV: { id: PageId; label: string; icon: any; group?: string }[] = [
-  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, group: "Manage" },
-  { id: "audits", label: "Audits", icon: Users },
+  { id: "audits", label: "Audits", icon: FolderOpen, group: "Manage" },
+  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "ingest", label: "Ingest", icon: FileInput, group: "Ingest" },
   { id: "recompute", label: "Statistical Recompute", icon: Calculator, group: "Detect" },
   { id: "numerical", label: "Numerical Consistency", icon: Hash },
