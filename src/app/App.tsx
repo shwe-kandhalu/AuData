@@ -1,4 +1,4 @@
-import { Component, ReactNode, useEffect } from "react";
+import { Component, ReactNode, useEffect, useState } from "react";
 import { Sidebar } from "./components/Sidebar";
 import { Toaster } from "./components/ui/sonner";
 import { StoreProvider, useStore } from "./lib/store";
@@ -15,6 +15,7 @@ import { ReferenceIntegrityPage } from "./pages/ReferenceIntegrityPage";
 import { MethodsClaimsPage } from "./pages/MethodsClaimsPage";
 import { IngestService, AuditStore } from "./lib/apiClient";
 import { RecomputePage } from "./pages/RecomputePage";
+import { LandingPage } from "./pages/LandingPage";
 import { LayoutDashboard, Upload, Calculator, Hash, Image as ImageIcon, GitCompare, BookMarked, Gauge, ShieldCheck, FileText, Users } from "lucide-react";
 
 const PAGE_META: Record<string, { title: string; subtitle: string; icon: any }> = {
@@ -137,11 +138,16 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
 }
 
 export default function App() {
+  const [showLanding, setShowLanding] = useState(true);
   return (
     <ErrorBoundary>
       <AuthProvider>
         <StoreProvider>
-          <Shell />
+          {showLanding ? (
+            <LandingPage onEnter={() => setShowLanding(false)} />
+          ) : (
+            <Shell />
+          )}
         </StoreProvider>
       </AuthProvider>
     </ErrorBoundary>
