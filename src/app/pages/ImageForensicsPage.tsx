@@ -195,7 +195,7 @@ export function ImageForensicsPage() {
                         <div>Severity: <span className={`font-medium ${fig.copy_move_result.severity === 'high' ? 'text-red-600' : fig.copy_move_result.severity === 'moderate' ? 'text-amber-600' : 'text-slate-600'}`}>{fig.copy_move_result.severity}</span></div>
                         <div>Matches: {fig.copy_move_result.num_suspicious_matches || 0}</div>
                         {fig.copy_move_result.overlay_path && (
-                          <a href={`${apiConfig.baseUrl}/image-forensics/image?filepath=${encodeURIComponent(fig.copy_move_result.overlay_path)}`} target="_blank" className="text-blue-600 hover:underline">View overlay</a>
+                          <img src={`${apiConfig.baseUrl}/image-forensics/image?filepath=${encodeURIComponent(fig.copy_move_result.overlay_path)}`} alt="Copy-Move overlay" className="max-w-sm border rounded mt-2" />
                         )}
                       </div>
                     </div>
@@ -207,7 +207,7 @@ export function ImageForensicsPage() {
                         <div>Severity: <span className={`font-medium ${fig.splice_result.severity === 'high' ? 'text-red-600' : fig.splice_result.severity === 'moderate' ? 'text-amber-600' : 'text-slate-600'}`}>{fig.splice_result.severity}</span></div>
                         <div>Score: {fig.splice_result.score?.toFixed(3)}</div>
                         {fig.splice_result.overlay_path && (
-                          <a href={`${apiConfig.baseUrl}/image-forensics/image?filepath=${encodeURIComponent(fig.splice_result.overlay_path)}`} target="_blank" className="text-blue-600 hover:underline">View overlay</a>
+                          <img src={`${apiConfig.baseUrl}/image-forensics/image?filepath=${encodeURIComponent(fig.splice_result.overlay_path)}`} alt="Splice detection overlay" className="max-w-sm border rounded mt-2" />
                         )}
                       </div>
                     </div>
