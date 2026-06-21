@@ -477,15 +477,16 @@ def methods_claims_stream(req: MethodsClaimsRequest):
                 return
             evidence = mc._evidence_context(paper)
             with ThreadPoolExecutor(max_workers=min(10, len(claims))) as ex:
-                futs = {ex.submit(mc.check_claim, i, c, evidence, model): i for i, c in enumerate(claims)}
+                futs = {ex.submit(mc.check_claim, i, c["claim"], c.get("quote", ""), evidence, model): i
+                        for i, c in enumerate(claims)}
                 for fut in as_completed(futs):
                     i = futs[fut]
                     try:
                         res = fut.result()
                     except Exception as e:
-                        res = {"index": i, "claim": claims[i], "verdict": "error", "severity": "medium",
-                               "issue_type": "Check failed", "confidence": 0.0, "reasoning": str(e),
-                               "evidence": "", "suggestion": "", "status": "flagged"}
+                        res = {"index": i, "claim": claims[i]["claim"], "quote": claims[i].get("quote", ""),
+                               "verdict": "error", "severity": "medium", "issue_type": "Check failed",
+                               "confidence": 0.0, "reasoning": str(e), "evidence": "", "suggestion": "", "status": "flagged"}
                     results.append(res)
                     event_queue.put(("result", res))
             event_queue.put(("done", {"summary": mc.summarize(results)}))

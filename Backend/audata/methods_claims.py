@@ -115,29 +115,32 @@ Include every assertion the authors make about:
   • recommendations or "should" statements,
   • generalisable implications or claims about real-world impact.
 
-Output ONLY JSON: {{"claims": ["concise claim 1", "concise claim 2", ...]}}
-- Up to {limit} items, each ONE clear sentence (verbatim phrasing where possible).
-- Each item must be a plain string, not an object.
+Output ONLY JSON:
+{{"claims": [{{"claim": "concise one-sentence claim", "quote": "a short VERBATIM phrase (3-12 words) copied EXACTLY from the text above that states this claim, for locating it in the PDF"}}, ...]}}
+- Up to {limit} items.
+- "quote" must be copied character-for-character from the text (no paraphrasing); "" if none.
 - Only THIS paper's own claims — skip background facts and others' findings it cites.
 
 TEXT:
 {ctx}"""
     parsed = llm.extract_json(llm.invoke(model, prompt))
-    # Flatten whatever shape the model returned ({"claims":[...]}, a bare list,
-    # [{"claims":[...]}], [{"claim":"..."}], etc.) down to plain strings.
-    flat: List[str] = []
+    # Flatten whatever shape the model returned into {claim, quote} dicts.
+    flat: List[Dict[str, str]] = []
 
     def _collect(x):
         if isinstance(x, str):
-            flat.append(x)
+            flat.append({"claim": x, "quote": ""})
         elif isinstance(x, dict):
             if isinstance(x.get("claims"), list):
                 _collect(x["claims"])
             else:
+                claim = ""
                 for k in ("claim", "text", "statement", "conclusion"):
                     if x.get(k):
-                        flat.append(str(x[k]))
+                        claim = str(x[k])
                         break
+                if claim:
+                    flat.append({"claim": claim, "quote": str(x.get("quote") or "")})
         elif isinstance(x, list):
             for y in x:
                 _collect(y)
@@ -145,9 +148,9 @@ TEXT:
     _collect(parsed)
     out = []
     for c in flat:
-        s = " ".join(str(c).split()).strip()
+        s = " ".join(c["claim"].split()).strip()
         if len(s) > 8:
-            out.append(s[:400])
+            out.append({"claim": s[:400], "quote": " ".join(c["quote"].split()).strip()[:200]})
         if len(out) >= limit:
             break
     return out
@@ -208,10 +211,10 @@ Be conservative: if the evidence is insufficient to judge, prefer "overreach"/"l
     }
 
 
-def check_claim(index: int, claim: str, evidence_ctx: str, model: Any) -> Dict[str, Any]:
+def check_claim(index: int, claim: str, quote: str, evidence_ctx: str, model: Any) -> Dict[str, Any]:
     a = assess_claim(claim, evidence_ctx, model)
     flagged = a["verdict"] not in ("supported", "skipped") and _SEV_RANK.get(a["severity"], 0) > 0
-    return {"index": index, "claim": claim, **a, "status": "flagged" if flagged else "ok"}
+    return {"index": index, "claim": claim, "quote": quote, **a, "status": "flagged" if flagged else "ok"}
 
 
 def summarize(results: List[Dict[str, Any]]) -> Dict[str, Any]:

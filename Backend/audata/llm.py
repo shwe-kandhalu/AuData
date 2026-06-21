@@ -39,22 +39,22 @@ def get_model(model_name: Optional[str] = None):
             if not key:
                 return None
             from langchain_anthropic import ChatAnthropic
-            return ChatAnthropic(model=name, api_key=key, temperature=0)
+            return ChatAnthropic(model=name, api_key=key, temperature=0, max_tokens=4096)
         if "gpt" in low or low.startswith(("o1", "o3", "o4")):
             key = os.getenv("OPENAI_API_KEY")
             if not key:
                 return None
             from langchain_openai import ChatOpenAI
-            return ChatOpenAI(model=name, api_key=key, temperature=0)
+            return ChatOpenAI(model=name, api_key=key, temperature=0, max_tokens=4096)
         if "gemini" in low:
             key = os.getenv("GEMINI_API_KEY")
             if not key:
                 return None
             from langchain_google_genai import ChatGoogleGenerativeAI
-            return ChatGoogleGenerativeAI(model=name, google_api_key=key, temperature=0)
-        # Default → local Ollama.
+            return ChatGoogleGenerativeAI(model=name, google_api_key=key, temperature=0, max_output_tokens=4096)
+        # Default → local Ollama (num_predict default is tiny — raise it).
         from langchain_ollama import ChatOllama
-        return ChatOllama(model=name, temperature=0,
+        return ChatOllama(model=name, temperature=0, num_predict=4096,
                           base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
     except Exception as e:
         print(f"[audata.llm] get_model({name}) failed: {e}")

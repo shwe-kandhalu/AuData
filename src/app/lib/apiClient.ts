@@ -1124,6 +1124,7 @@ export type ClaimVerdict =
 export type ClaimResult = {
   index: number;
   claim: string;
+  quote?: string;
   verdict: ClaimVerdict;
   severity: RefSeverity;
   issue_type: string;

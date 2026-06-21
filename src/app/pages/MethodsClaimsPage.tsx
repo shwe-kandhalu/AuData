@@ -231,7 +231,7 @@ export function MethodsClaimsPage() {
           {paper?.has_pdf && sel && locateOpen && (
             <PdfHighlightViewer
               url={`${apiConfig.baseUrl}/ingest/pdf-file?id=${encodeURIComponent(paper.id)}`}
-              terms={[sel.claim.split(/\s+/).slice(0, 10).join(" ")]}
+              terms={[sel.quote, sel.claim.split(/\s+/).slice(0, 8).join(" ")].filter((t): t is string => !!t && t.length >= 4)}
             />
           )}
         </DialogContent>
@@ -271,6 +271,7 @@ function Detail({ r, decision, onDecide, canLocate, onLocate }: {
       <div>
         <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">Claim</div>
         <p className="text-base font-medium leading-snug">{r.claim}</p>
+        {r.quote && <p className="text-xs italic text-muted-foreground mt-1 border-l-2 border-muted pl-2">“{r.quote}”</p>}
         {r.issue_type && r.verdict !== "supported" && <p className="text-xs text-amber-600 mt-1">{r.issue_type}</p>}
       </div>
 
