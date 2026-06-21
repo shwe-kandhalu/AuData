@@ -5,7 +5,7 @@ import { StoreProvider, useStore } from "./lib/store";
 import { AuthProvider } from "./lib/auth";
 import { UserMenu } from "./components/UserMenu";
 import {
-  RecomputePage, NumericalPage,
+  NumericalPage,
   ImagingPage, ReliabilityPage, ReviewPage, ReportPage,
 } from "./pages/AuditPlaceholders";
 import { DashboardPage } from "./pages/DashboardPage";
@@ -14,6 +14,7 @@ import { IngestPage } from "./pages/IngestPage";
 import { ReferenceIntegrityPage } from "./pages/ReferenceIntegrityPage";
 import { MethodsClaimsPage } from "./pages/MethodsClaimsPage";
 import { IngestService, AuditStore } from "./lib/apiClient";
+import { RecomputePage } from "./pages/RecomputePage";
 import { LayoutDashboard, Upload, Calculator, Hash, Image as ImageIcon, GitCompare, BookMarked, Gauge, ShieldCheck, FileText, Users } from "lucide-react";
 
 const PAGE_META: Record<string, { title: string; subtitle: string; icon: any }> = {

@@ -46,6 +46,7 @@ benchmark/
 # --- Misc artifacts ---
 *.tmp
 *.bak
+auditor_output/
 
 # --- setup.sh runtime state (PIDs + logs of background services) ---
 .runtime/
