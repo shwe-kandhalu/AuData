@@ -70,6 +70,8 @@ class AuditFinding:
     claim: str
     reported_p: str
     recomputed_p: float
+    difference: float
+    confidence: str
     evidence: EvidenceTrace
     math: MathTrace
     note: str
@@ -80,10 +82,19 @@ class AuditFinding:
             "claim": self.claim,
             "reported_p": self.reported_p,
             "recomputed_p": self.recomputed_p,
+            "difference": self.difference,
+            "confidence": self.confidence,
             "evidence": self.evidence.to_dict(),
             "math": self.math.to_dict(),
             "note": self.note,
         }
+
+
+@dataclass(frozen=True)
+class WordSpan:
+    start_char: int
+    end_char: int
+    bbox: dict[str, float]
 
 
 @dataclass(frozen=True)
@@ -93,6 +104,7 @@ class PageSpan:
     end_char: int
     text: str
     bboxes_by_quote: dict[tuple[int, int], list[dict[str, float]]]
+    word_spans: list[WordSpan]
 
 
 SECTION_RE = re.compile(
@@ -106,6 +118,27 @@ SECTION_RE = re.compile(
 
 def _rect_to_dict(rect: fitz.Rect) -> dict[str, float]:
     return {"x0": rect.x0, "y0": rect.y0, "x1": rect.x1, "y1": rect.y1}
+
+
+def _merge_boxes_by_line(boxes: list[dict[str, float]]) -> list[dict[str, float]]:
+    lines: list[dict[str, float]] = []
+    for box in boxes:
+        y_mid = (box["y0"] + box["y1"]) / 2
+        target = None
+        for line in lines:
+            line_mid = (line["y0"] + line["y1"]) / 2
+            overlaps = box["y0"] <= line["y1"] and box["y1"] >= line["y0"]
+            if overlaps or abs(y_mid - line_mid) <= 4:
+                target = line
+                break
+        if target is None:
+            lines.append(dict(box))
+            continue
+        target["x0"] = min(target["x0"], box["x0"])
+        target["y0"] = min(target["y0"], box["y0"])
+        target["x1"] = max(target["x1"], box["x1"])
+        target["y1"] = max(target["y1"], box["y1"])
+    return sorted(lines, key=lambda item: (item["y0"], item["x0"]))
 
 
 def _section_for_offset(text: str, offset: int) -> str | None:
@@ -139,6 +172,20 @@ def _sentence_context(text: str, start: int, end: int) -> tuple[str, int, int, s
         possible_heading = text[sentence_start:sentence_start + heading_break]
         if SECTION_RE.match(possible_heading):
             sentence_start = sentence_start + heading_break + 1
+    prefix = text[sentence_start:start]
+    paragraph_breaks = list(re.finditer(r"\n\s*\n", prefix))
+    if paragraph_breaks:
+        sentence_start = sentence_start + paragraph_breaks[-1].end()
+        prefix = text[sentence_start:start]
+    first_line_end = prefix.find("\n")
+    if first_line_end >= 0 and SECTION_RE.match(prefix[:first_line_end]):
+        sentence_start = sentence_start + first_line_end + 1
+        prefix = text[sentence_start:start]
+    line_offset = 0
+    for line in prefix.splitlines(keepends=True):
+        if SECTION_RE.match(line.strip()):
+            sentence_start = sentence_start + line_offset + len(line)
+        line_offset += len(line)
 
     sentence_end = right_window
     match = re.search(r"[.!?](?:\s|$)|\n\s*\n", right)
@@ -171,6 +218,26 @@ def _extract_pdf_with_trace(pdf: str | Path | bytes) -> tuple[str, list[PageSpan
                 bboxes_by_quote[(page_start + claim.start_char, page_start + claim.end_char)] = [
                     _rect_to_dict(rect) for rect in rects
                 ]
+            word_spans: list[WordSpan] = []
+            search_from = 0
+            for word in page.get_text("words"):
+                word_text = str(word[4])
+                if not word_text:
+                    continue
+                local_start = text.find(word_text, search_from)
+                if local_start < 0:
+                    local_start = text.find(word_text)
+                if local_start < 0:
+                    continue
+                local_end = local_start + len(word_text)
+                search_from = local_end
+                word_spans.append(
+                    WordSpan(
+                        start_char=page_start + local_start,
+                        end_char=page_start + local_end,
+                        bbox={"x0": float(word[0]), "y0": float(word[1]), "x1": float(word[2]), "y1": float(word[3])},
+                    )
+                )
             page_spans.append(
                 PageSpan(
                     page=index + 1,
@@ -178,6 +245,7 @@ def _extract_pdf_with_trace(pdf: str | Path | bytes) -> tuple[str, list[PageSpan
                     end_char=page_end,
                     text=text,
                     bboxes_by_quote=bboxes_by_quote,
+                    word_spans=word_spans,
                 )
             )
             full_parts.append(text)
@@ -264,19 +332,29 @@ def classify_claim(claim: StatisticalClaim, recomputed_p: float, tolerance: floa
         diff = abs(reported - recomputed_p)
         if diff <= tolerance:
             return "ok", f"Reported p matches recomputed p within +/- {tolerance:g}."
-        return "mismatch", f"Reported p differs by {diff:.4g}."
+        return "mismatch", "Reported p-value does not match the recomputed p-value."
 
     if claim.comparator == "<":
         if recomputed_p < reported:
             return "ok", "Recomputed p satisfies the reported threshold."
-        return "mismatch", "Recomputed p does not satisfy the reported '<' threshold."
+        return "mismatch", "Reported p-value does not match the recomputed p-value; the recomputed value does not satisfy the reported '<' threshold."
 
     if claim.comparator == ">":
         if recomputed_p > reported:
             return "ok", "Recomputed p satisfies the reported threshold."
-        return "mismatch", "Recomputed p does not satisfy the reported '>' threshold."
+        return "mismatch", "Reported p-value does not match the recomputed p-value; the recomputed value does not satisfy the reported '>' threshold."
 
     return "unknown", "Unsupported p-value comparator."
+
+
+def _confidence_for(evidence: EvidenceTrace, math_trace: MathTrace) -> str:
+    has_inputs = bool(math_trace.inputs)
+    has_quote = bool(evidence.quote and evidence.exact_quote)
+    if has_inputs and has_quote and evidence.page is not None and bool(evidence.bboxes):
+        return "High"
+    if has_inputs and has_quote:
+        return "Medium"
+    return "Low"
 
 
 def _evidence_for_claim(
@@ -285,13 +363,20 @@ def _evidence_for_claim(
     page_spans: list[PageSpan] | None = None,
 ) -> EvidenceTrace:
     page_number = None
-    bboxes: list[dict[str, float]] = []
+    claim_bboxes: list[dict[str, float]] = []
+    active_span: PageSpan | None = None
     for span in page_spans or []:
         if span.start_char <= claim.start_char <= span.end_char:
             page_number = span.page
-            bboxes = span.bboxes_by_quote.get((claim.start_char, claim.end_char), [])
+            active_span = span
+            claim_bboxes = span.bboxes_by_quote.get((claim.start_char, claim.end_char), [])
             break
     quote, quote_start, quote_end, surrounding = _sentence_context(text, claim.start_char, claim.end_char)
+    sentence_bboxes = [
+        word.bbox for word in (active_span.word_spans if active_span else [])
+        if word.end_char > quote_start and word.start_char < quote_end
+    ]
+    bboxes = _merge_boxes_by_line(sentence_bboxes) if sentence_bboxes else claim_bboxes
     return EvidenceTrace(
         page=page_number,
         section=_section_for_offset(text, claim.start_char),
@@ -316,13 +401,16 @@ def audit_text(
     for claim in extract_claims(text):
         math_trace = recompute_math_trace(claim)
         status, message = classify_claim(claim, math_trace.result, tolerance)
+        evidence = _evidence_for_claim(text, claim, page_spans)
         findings.append(
             AuditFinding(
                 status=status,
                 claim=claim.raw,
                 reported_p=_format_reported_p(claim),
                 recomputed_p=math_trace.result,
-                evidence=_evidence_for_claim(text, claim, page_spans),
+                difference=abs(claim.reported_p - math_trace.result),
+                confidence=_confidence_for(evidence, math_trace),
+                evidence=evidence,
                 math=math_trace,
                 note=message,
             )
@@ -369,29 +457,25 @@ def write_markdown_report(result: dict, path: str | Path) -> None:
         evidence = finding["evidence"]
         math_trace = finding["math"]
         inputs = ", ".join(f"{k}={v:.6g}" if isinstance(v, float) else f"{k}={v}" for k, v in math_trace["inputs"].items())
-        page = f"{evidence['page']}" if evidence["page"] else "unavailable"
-        section = evidence.get("section") or "unavailable"
         source_link = f"{result['source']}#page={evidence['page']}" if evidence.get("page") else result["source"]
+        is_ok = finding["status"] == "ok"
+        status_label = "OK" if is_ok else ("Mismatch" if finding["status"] == "mismatch" else finding["status"].title())
+        details_title = "Verification Details" if is_ok else "Why this was flagged"
+        quote = evidence["quote"]
+        exact = evidence.get("exact_quote") or finding["claim"]
+        highlighted_quote = quote.replace(exact, f"**{exact}**", 1) if exact in quote else quote
         lines.extend(
             [
-                f"## Finding {index}: {finding['status'].title()}",
+                f"## Finding {index}: {status_label}",
                 "",
                 f"**Claim:** `{finding['claim']}`",
                 "",
-                f"**Page:** {page}",
-                "",
-                f"**Section:** {section}",
-                "",
-                f"**Source quote:** [\"{evidence['quote']}\"]({source_link})",
-                "",
-                f"**Trace:** claim chars `{evidence['start_char']}..{evidence['end_char']}`, quote chars `{evidence['quote_start_char']}..{evidence['quote_end_char']}`",
-                "",
-                f"**Bounding boxes:** `{json.dumps(evidence.get('bboxes') or [])}`",
+                f"**Source quote:** [\"{highlighted_quote}\"]({source_link})",
                 "",
                 f"**Reported p:** `{finding['reported_p']}`",
                 "",
                 "<details>",
-                "<summary>Math breakdown</summary>",
+                f"<summary>{details_title}</summary>",
                 "",
                 f"**Test:** `{math_trace['test']}`",
                 "",
@@ -405,7 +489,11 @@ def write_markdown_report(result: dict, path: str | Path) -> None:
                 "",
                 f"**Compare:** reported `{finding['reported_p']}`, computed `p={finding['recomputed_p']:.6g}`",
                 "",
-                f"**Verdict:** {finding['status']}",
+                f"**Difference:** `{finding.get('difference', 0):.6g}`",
+                "",
+                f"**Confidence:** {finding.get('confidence', 'Medium')}",
+                "",
+                f"**Verdict:** {status_label}",
                 "",
                 "</details>",
                 "",
@@ -426,12 +514,20 @@ def write_html_report(result: dict, path: str | Path) -> None:
             for k, v in math_trace["inputs"].items()
         )
         page = str(evidence["page"]) if evidence.get("page") else "unavailable"
-        section = evidence.get("section") or "unavailable"
         quote_href = f"{html.escape(result['source'])}#page={evidence['page']}" if evidence.get("page") else "#"
-        bbox_text = html.escape(json.dumps(evidence.get("bboxes") or []))
+        is_ok = finding["status"] == "ok"
+        status_label = "OK" if is_ok else ("Mismatch" if finding["status"] == "mismatch" else finding["status"].title())
+        details_title = "Verification Details" if is_ok else "Why this was flagged"
+        quote = evidence["quote"]
+        exact = evidence.get("exact_quote") or finding["claim"]
+        if exact and exact in quote:
+            start, end = quote.split(exact, 1)
+            highlighted_quote = f"{html.escape(start)}<mark>{html.escape(exact)}</mark>{html.escape(end)}"
+        else:
+            highlighted_quote = html.escape(quote)
         rows.append(
             f"""<tr class="{html.escape(finding['status'])}">
-      <td><strong>{html.escape(finding['status'])}</strong></td>
+      <td><strong>{html.escape(status_label)}</strong></td>
       <td><code>{html.escape(finding['claim'])}</code></td>
       <td>{html.escape(page)}</td>
       <td><a href="{quote_href}">&ldquo;{html.escape(evidence['quote'])}&rdquo;</a></td>
@@ -441,18 +537,11 @@ def write_html_report(result: dict, path: str | Path) -> None:
     <tr class="details-row">
       <td colspan="6">
         <details>
-          <summary>Math breakdown and evidence trace</summary>
+          <summary>{html.escape(details_title)}</summary>
           <div class="detail-grid">
             <div>
               <h3>Evidence</h3>
-              <dl>
-                <dt>Page</dt><dd>{html.escape(page)}</dd>
-                <dt>Section</dt><dd>{html.escape(section)}</dd>
-                <dt>Exact claim</dt><dd><code>{html.escape(evidence.get('exact_quote') or finding['claim'])}</code></dd>
-                <dt>Source quote</dt><dd>&ldquo;{html.escape(evidence['quote'])}&rdquo;</dd>
-                <dt>Offsets</dt><dd><code>claim {evidence['start_char']}..{evidence['end_char']}; quote {evidence.get('quote_start_char')}..{evidence.get('quote_end_char')}</code></dd>
-                <dt>Bounding boxes</dt><dd><code>{bbox_text}</code></dd>
-              </dl>
+              <blockquote>&ldquo;{highlighted_quote}&rdquo;</blockquote>
             </div>
             <div>
               <h3>Math</h3>
@@ -463,7 +552,9 @@ def write_html_report(result: dict, path: str | Path) -> None:
                 <dt>Substitution</dt><dd><code>{html.escape(math_trace['substitution'])}</code></dd>
                 <dt>Computed</dt><dd><code>p={finding['recomputed_p']:.6g}</code></dd>
                 <dt>Compare</dt><dd>reported <code>{html.escape(finding['reported_p'])}</code>, computed <code>p={finding['recomputed_p']:.6g}</code></dd>
-                <dt>Verdict</dt><dd>{html.escape(finding['status'])}</dd>
+                <dt>Difference</dt><dd><code>{float(finding.get('difference', 0)):.6g}</code></dd>
+                <dt>Confidence</dt><dd>{html.escape(finding.get('confidence', 'Medium'))}</dd>
+                <dt>Verdict</dt><dd>{html.escape(status_label)}</dd>
               </dl>
             </div>
           </div>
@@ -490,6 +581,8 @@ def write_html_report(result: dict, path: str | Path) -> None:
     dt {{ font-weight: 700; color: #374151; }}
     dd {{ margin: 0; }}
     code {{ white-space: normal; background: #f3f4f6; padding: 0.1rem 0.25rem; border-radius: 4px; }}
+    mark {{ background: #fef08a; padding: 0.05rem 0.2rem; border-radius: 3px; }}
+    blockquote {{ border-left: 3px solid #d1d5db; margin: 0; padding-left: 0.75rem; color: #4b5563; }}
     a {{ color: #1d4ed8; text-decoration: none; }}
     a:hover {{ text-decoration: underline; }}
     @media (max-width: 800px) {{ .detail-grid {{ grid-template-columns: 1fr; }} }}

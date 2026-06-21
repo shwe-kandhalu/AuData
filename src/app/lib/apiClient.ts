@@ -940,6 +940,8 @@ export type StatisticalFinding = {
   claim: string;
   reported_p: string;
   recomputed_p: number;
+  difference: number;
+  confidence: "High" | "Medium" | "Low" | string;
   evidence: {
     page: number | null;
     section: string | null;
@@ -968,6 +970,7 @@ export type StatisticalRecomputeResult = {
   title: string;
   claim_count: number;
   mismatch_count: number;
+  no_findings_reason?: string;
   findings: StatisticalFinding[];
 };
 

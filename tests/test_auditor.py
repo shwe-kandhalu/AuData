@@ -41,6 +41,7 @@ class AuditorTests(unittest.TestCase):
         findings = audit_text("The effect was t(28) = 2.45, p = .900.")
 
         self.assertEqual(findings[0].status, "mismatch")
+        self.assertEqual(findings[0].note, "Reported p-value does not match the recomputed p-value.")
 
     def test_finding_contains_evidence_and_math_trace(self):
         text = "Results\nThe effect was t(28) = 2.45, p = .900, indicating a large difference."
@@ -61,6 +62,18 @@ class AuditorTests(unittest.TestCase):
         self.assertIn("t.cdf", finding["math"]["formula"])
         self.assertIn("substitution", finding["math"])
         self.assertEqual(finding["math"]["inputs"]["df"], 28)
+        self.assertIn(finding["confidence"], {"High", "Medium", "Low"})
+        self.assertGreater(finding["difference"], 0)
+
+    def test_evidence_quote_skips_preceding_heading(self):
+        text = "Sanity Test Paper\n\nResults\nParticipants improved, t(28) = 2.31, p = .029."
+        finding = audit_text(text)[0].to_dict()
+
+        self.assertEqual(
+            finding["evidence"]["quote"],
+            "Participants improved, t(28) = 2.31, p = .029.",
+        )
+        self.assertEqual(finding["evidence"]["section"], "Results")
 
     def test_pdf_audit_contains_page_trace(self):
         sample = Path("samples/test_paper.pdf")
