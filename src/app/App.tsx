@@ -85,6 +85,7 @@ function Shell() {
       if (a.meta && !s.metaAudits[paperId]) s.setMetaAudits({ ...s.metaAudits, [paperId]: a.meta });
       if (a.images && !s.imageAudits[paperId]) s.setImageAudits({ ...s.imageAudits, [paperId]: a.images });
       if (a.numerical && !s.numericalAudits[paperId]) s.setNumericalAudits({ ...s.numericalAudits, [paperId]: a.numerical });
+      if (a.statcheck && !s.statcheckAudits[paperId]) s.setStatcheckAudits({ ...s.statcheckAudits, [paperId]: a.statcheck });
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps

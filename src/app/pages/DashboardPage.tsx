@@ -29,7 +29,7 @@ type Detector = {
 const DETECTORS: Detector[] = [
   {
     key: "statcheck", label: "Statistical Recompute", icon: Calculator, page: "recompute",
-    run: (p) => StatisticalAuditService.recompute(p),
+    run: (p) => StatisticalAuditService.recompute(p), storeSetter: "setStatcheckAudits",
     flagged: (d) => d?.mismatch_count ?? 0, total: (d) => d?.claim_count,
   },
   {

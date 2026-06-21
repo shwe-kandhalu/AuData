@@ -70,7 +70,7 @@ export function ImageForensicsPage() {
     } else apply(null);
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [auditKey]);
+  }, [auditKey, s.imageAudits?.[auditKey]]);
 
   function persist(patch: Partial<{ summary: ImageForensicsSummary | null; report: ImageForensicsReport | null; note: string | null }>) {
     const prev = s.imageAudits?.[auditKey] || {};

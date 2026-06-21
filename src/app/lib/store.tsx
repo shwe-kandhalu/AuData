@@ -146,6 +146,7 @@ type Ctx = {
   metaAudits: Record<string, any>; setMetaAudits: (v: Record<string, any>) => void;
   imageAudits: Record<string, any>; setImageAudits: (v: Record<string, any>) => void;
   numericalAudits: Record<string, any>; setNumericalAudits: (v: Record<string, any>) => void;
+  statcheckAudits: Record<string, any>; setStatcheckAudits: (v: Record<string, any>) => void;
 
   // Quality Assessment
   rawPapers: Paper[] | null; setRawPapers: (v: Paper[] | null) => void;
@@ -336,6 +337,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [metaAudits, setMetaAudits] = useState<Record<string, any>>({});
   const [imageAudits, setImageAudits] = useState<Record<string, any>>({});
   const [numericalAudits, setNumericalAudits] = useState<Record<string, any>>({});
+  const [statcheckAudits, setStatcheckAudits] = useState<Record<string, any>>({});
   const [rawPapers, setRawPapers] = useState<Paper[] | null>(null);
   const [uniquePapers, setUniquePapers] = useState<Paper[] | null>(null);
   const [duplicatesCount, setDuplicatesCount] = useState(0);
@@ -490,7 +492,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const snapshot = () => ({
     history, pico, inclusion, exclusion, query, unifiedSearchQuery, perDbQueries,
     sources, numPerSource, model,
-    paperUnderAudit, refAudits, methodsAudits, metaAudits, imageAudits, numericalAudits,
+    paperUnderAudit, refAudits, methodsAudits, metaAudits, imageAudits, numericalAudits, statcheckAudits,
     rawPapers, uniquePapers, duplicatesCount, qualityReports,
     excludedByQuality: Array.from(excludedByQuality),
     qualityOverrides,
@@ -525,6 +527,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setMetaAudits(d.metaAudits ?? {});
     setImageAudits(d.imageAudits ?? {});
     setNumericalAudits(d.numericalAudits ?? {});
+    setStatcheckAudits(d.statcheckAudits ?? {});
     setRawPapers(d.rawPapers ?? null);
     setUniquePapers(d.uniquePapers ?? null);
     setDuplicatesCount(d.duplicatesCount ?? 0);
@@ -565,7 +568,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const t = setTimeout(() => {
       // Persist whenever there's meaningful work — for AuData that's a paper
       // under audit or detection results, not (EE's) PICO history.
-      const hasWork = history.length > 0 || !!paperUnderAudit || Object.keys(refAudits).length > 0 || Object.keys(methodsAudits).length > 0 || Object.keys(metaAudits).length > 0 || Object.keys(imageAudits).length > 0 || Object.keys(numericalAudits).length > 0;
+      const hasWork = history.length > 0 || !!paperUnderAudit || Object.keys(refAudits).length > 0 || Object.keys(methodsAudits).length > 0 || Object.keys(metaAudits).length > 0 || Object.keys(imageAudits).length > 0 || Object.keys(numericalAudits).length > 0 || Object.keys(statcheckAudits).length > 0;
       if (!hasWork) { try { localStorage.removeItem(LOCAL_SNAPSHOT_KEY); } catch { /* ignore */ } return; }
       // Envelope keeps the session identity with the data, so a refresh keeps
       // editing the SAME session instead of spawning a duplicate.
@@ -585,7 +588,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }, 600);
     return () => clearTimeout(t);
   }, [history, pico, inclusion, exclusion, query, unifiedSearchQuery, perDbQueries,
-      paperUnderAudit, refAudits, methodsAudits, metaAudits, imageAudits, numericalAudits,
+      paperUnderAudit, refAudits, methodsAudits, metaAudits, imageAudits, numericalAudits, statcheckAudits,
       sources, numPerSource, model, rawPapers, uniquePapers, duplicatesCount,
       qualityReports, excludedByQuality, qualityOverrides, abstractOverrides,
       fullTextOverrides, rerankThreshold, rerankResults, results, fullTextResults,
@@ -615,7 +618,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setHistory([]); setPico({ population: "", intervention: "", comparator: "", outcome: "" });
     setInclusion([]); setExclusion([]); setQuery(""); setUnifiedSearchQuery(""); setPerDbQueries({});
     setSimulation(null); setDbTestResults(null); setAgenticTrace(null); setAgenticSummary(null);
-    setPaperUnderAudit(null); setRefAudits({}); setMethodsAudits({});
+    setPaperUnderAudit(null); setRefAudits({}); setMethodsAudits({}); setStatcheckAudits({});
     setRawPapers(null); setUniquePapers(null); setDuplicatesCount(0);
     setQualityReports(null); setExcludedByQuality(new Set()); setQualityOverrides([]);
     setAbstractOverrides({}); setFullTextOverrides({});
@@ -643,6 +646,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     metaAudits, setMetaAudits,
     imageAudits, setImageAudits,
     numericalAudits, setNumericalAudits,
+    statcheckAudits, setStatcheckAudits,
     rawPapers, setRawPapers, uniquePapers, setUniquePapers, duplicatesCount, setDuplicatesCount,
     qualityReports, setQualityReports, excludedByQuality, setExcludedByQuality,
     qualityOverrides, setQualityOverrides, addQualityOverride, clearQualityOverrides,

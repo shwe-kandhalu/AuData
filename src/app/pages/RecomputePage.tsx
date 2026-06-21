@@ -81,23 +81,31 @@ export function RecomputePage() {
   const [selected, setSelected] = useState<number | null>(null);
   const [locateOpen, setLocateOpen] = useState(false);
   const [view, setView] = useState<"stats" | "meta">("stats");
+  const auditKey = paper?.id || "__none__";
 
-  // Hydrate the saved statistical recompute for this paper, so results persist
-  // across tab switches and when a paper audit is pulled back from the session.
+  // Hydrate from the shared store (reactive), so results persist across tab
+  // switches, survive a refresh, and appear immediately after a Dashboard
+  // "Run all" without re-running. Falls back to the server on first load.
   useEffect(() => {
     let cancelled = false;
-    setResult(null); setSelected(null);
-    if (!paper) return;
-    AuditStore.getAll(paper.id).then((a) => {
-      if (cancelled || !a.statcheck) return;
-      const r = a.statcheck as StatisticalRecomputeResult;
+    const apply = (r: StatisticalRecomputeResult | null) => {
+      if (cancelled) return;
       setResult(r);
-      const fm = r.findings?.findIndex((f) => f.status === "mismatch") ?? -1;
-      setSelected(r.findings?.length ? (fm >= 0 ? fm : 0) : null);
+      if (r?.findings?.length) {
+        const fm = r.findings.findIndex((f) => f.status === "mismatch");
+        setSelected(fm >= 0 ? fm : 0);
+      } else setSelected(null);
+    };
+    const local = store.statcheckAudits?.[auditKey] as StatisticalRecomputeResult | undefined;
+    if (local) { apply(local); return () => { cancelled = true; }; }
+    apply(null);
+    if (paper) AuditStore.getAll(paper.id).then((a) => {
+      if (cancelled || !a.statcheck) return;
+      store.setStatcheckAudits({ ...store.statcheckAudits, [auditKey]: a.statcheck });
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paper?.id]);
+  }, [auditKey, store.statcheckAudits?.[auditKey]]);
 
   async function runAudit() {
     if (!paper) return;
@@ -108,6 +116,7 @@ export function RecomputePage() {
       const firstMismatch = r.findings.findIndex((f) => f.status === "mismatch");
       setSelected(r.findings.length ? (firstMismatch >= 0 ? firstMismatch : 0) : null);
       AuditStore.save(paper.id, "statcheck", r);   // surface in the Audit Report
+      store.setStatcheckAudits({ ...store.statcheckAudits, [paper.id]: r });
     } catch (e: any) {
       setError(e?.message || "Statistical recompute failed.");
     } finally {
@@ -336,7 +345,7 @@ function MetaAnalysisSection() {
     }
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [auditKey]);
+  }, [auditKey, s.metaAudits[auditKey]]);
 
   async function run() {
     if (!paper) { setError("Ingest a paper first."); return; }

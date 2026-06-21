@@ -100,7 +100,7 @@ export function MethodsClaimsPage() {
     } else { apply(null); }
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [auditKey]);
+  }, [auditKey, s.methodsAudits[auditKey]?.results]);
 
   function persist(patch: Partial<{ results: ClaimResult[]; summary: ClaimSummary | null; decisions: Record<number, Decision> }>) {
     const prev = s.methodsAudits[auditKey] || {};

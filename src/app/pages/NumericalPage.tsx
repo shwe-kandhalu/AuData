@@ -87,7 +87,7 @@ export function NumericalPage() {
     } else apply(null);
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [auditKey]);
+  }, [auditKey, s.numericalAudits[auditKey]]);
 
   function persist(patch: Record<string, any>) {
     const prev = s.numericalAudits[auditKey] || {};

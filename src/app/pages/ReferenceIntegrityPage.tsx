@@ -128,7 +128,7 @@ export function ReferenceIntegrityPage() {
     } else { apply(null); }
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [auditKey]);
+  }, [auditKey, s.refAudits[auditKey]?.results]);
 
   function persist(patch: Partial<{ results: RefResult[]; summary: RefSummary | null; metrics: RefMetrics | null; decisions: Record<number, Decision> }>) {
     const prev = s.refAudits[auditKey] || {};
