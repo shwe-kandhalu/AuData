@@ -106,17 +106,29 @@ Output ONLY JSON: {{"claims": ["concise claim 1", "concise claim 2", ...]}}
 TEXT:
 {ctx}"""
     parsed = llm.extract_json(llm.invoke(model, prompt))
-    if isinstance(parsed, list):
-        claims = parsed
-    elif isinstance(parsed, dict):
-        claims = parsed.get("claims") or parsed.get("claim") or []
-        if not isinstance(claims, list):
-            claims = [claims]
-    else:
-        claims = []
+    # Flatten whatever shape the model returned ({"claims":[...]}, a bare list,
+    # [{"claims":[...]}], [{"claim":"..."}], etc.) down to plain strings.
+    flat: List[str] = []
+
+    def _collect(x):
+        if isinstance(x, str):
+            flat.append(x)
+        elif isinstance(x, dict):
+            if isinstance(x.get("claims"), list):
+                _collect(x["claims"])
+            else:
+                for k in ("claim", "text", "statement", "conclusion"):
+                    if x.get(k):
+                        flat.append(str(x[k]))
+                        break
+        elif isinstance(x, list):
+            for y in x:
+                _collect(y)
+
+    _collect(parsed)
     out = []
-    for c in claims:
-        s = str(c).strip()
+    for c in flat:
+        s = " ".join(str(c).split()).strip()
         if len(s) > 8:
             out.append(s[:400])
         if len(out) >= limit:
