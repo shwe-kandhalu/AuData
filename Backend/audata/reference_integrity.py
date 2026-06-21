@@ -252,7 +252,8 @@ Output ONLY JSON:
 - unsupported: on-topic but does NOT establish the claim.
 - unrelated: about something else entirely.
 Be conservative: if the abstract is insufficient, prefer "partial" with low confidence."""
-    data = llm.extract_json(llm.invoke(model, prompt)) or {}
+    parsed = llm.extract_json(llm.invoke(model, prompt))
+    data = parsed if isinstance(parsed, dict) else {}
     verdict = str(data.get("verdict") or "").strip().lower()
     if verdict not in ("supports", "partial", "unsupported", "unrelated"):
         verdict = "partial"

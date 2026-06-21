@@ -105,8 +105,15 @@ Output ONLY JSON: {{"claims": ["concise claim 1", "concise claim 2", ...]}}
 
 TEXT:
 {ctx}"""
-    data = llm.extract_json(llm.invoke(model, prompt)) or {}
-    claims = data.get("claims") or []
+    parsed = llm.extract_json(llm.invoke(model, prompt))
+    if isinstance(parsed, list):
+        claims = parsed
+    elif isinstance(parsed, dict):
+        claims = parsed.get("claims") or parsed.get("claim") or []
+        if not isinstance(claims, list):
+            claims = [claims]
+    else:
+        claims = []
     out = []
     for c in claims:
         s = str(c).strip()
@@ -148,7 +155,8 @@ Output ONLY JSON:
 
 - "supported": the methods/results adequately back the claim → severity "none".
 Be conservative: if the evidence is insufficient to judge, prefer "overreach"/"low"."""
-    data = llm.extract_json(llm.invoke(model, prompt)) or {}
+    parsed = llm.extract_json(llm.invoke(model, prompt))
+    data = parsed if isinstance(parsed, dict) else {}
     verdict = str(data.get("verdict") or "").strip().lower()
     if verdict not in _VERDICTS:
         verdict = "overreach" if data else "skipped"
