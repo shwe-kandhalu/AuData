@@ -272,10 +272,6 @@ export function NumericalPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paper?.id]);
 
-  // ── API key (read-only, from env or localStorage) ───────────────────
-  const apiKey: string =
-    (import.meta as any).env?.VITE_ANTHROPIC_API_KEY ||
-    localStorage.getItem("audata:anthropic-key") || "";
 
   // ── 1. Internal Consistency ──────────────────────────────────────────
   const CONSISTENCY_STEPS: { label: string; desc: string; passMsg: string; type: RecFlag["type"] | null }[] = [
@@ -299,18 +295,12 @@ export function NumericalPage() {
   }, [consistencyBusy]);
 
   async function runConsistency() {
-    if (!apiKey) { setConsistencyMsg("Add your Anthropic API key above first."); return; }
     if (!paperText.trim()) { setConsistencyMsg("No paper loaded."); return; }
     setConsistencyBusy(true); setConsistencyFlags(null); setConsistencySummaries({}); setConsistencyMsg("");
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("/api/llm/chat", {
         method: "POST",
-        headers: {
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true",
-          "content-type": "application/json",
-        },
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({
           model: claudeModel,
           max_tokens: 4096,
@@ -403,14 +393,9 @@ ${paperText.slice(0, 20000)}
 </paper>`;
 
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("/api/llm/chat", {
         method: "POST",
-        headers: {
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true",
-          "content-type": "application/json",
-        },
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({
           model: claudeModel,
           max_tokens: 2048,
@@ -543,14 +528,9 @@ Return ONLY valid JSON (no markdown, no preamble):
 }`;
 
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("/api/llm/chat", {
         method: "POST",
-        headers: {
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true",
-          "content-type": "application/json",
-        },
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({
           model: claudeModel,
           max_tokens: 2048,

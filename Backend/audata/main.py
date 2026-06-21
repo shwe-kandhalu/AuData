@@ -753,3 +753,29 @@ def reference_integrity_check_paper_stream(req: CheckPaperRequest):
                 return
 
     return StreamingResponse(_gen(), media_type="text/event-stream")
+
+
+class LLMChatRequest(BaseModel):
+    model: str = ""
+    messages: List[Dict[str, str]] = []
+    max_tokens: int = 4096
+
+@app.post("/api/llm/chat")
+def llm_chat(req: LLMChatRequest):
+    from langchain_core.messages import HumanMessage, SystemMessage
+    model_name = req.model or llm.default_model()
+    m = llm.get_model(model_name)
+    if m is None:
+        raise HTTPException(status_code=503, detail=f"Model '{model_name}' unavailable — check ANTHROPIC_API_KEY in Backend/.env")
+    lc_msgs = []
+    for msg in req.messages:
+        if msg.get("role") == "system":
+            lc_msgs.append(SystemMessage(content=msg["content"]))
+        elif msg.get("role") == "user":
+            lc_msgs.append(HumanMessage(content=msg["content"]))
+    try:
+        r = m.invoke(lc_msgs)
+        text = getattr(r, "content", "") or ""
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"content": [{"type": "text", "text": text}]}
