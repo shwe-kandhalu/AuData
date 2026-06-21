@@ -824,6 +824,25 @@ def image_forensics_check_paper_stream(req: ImageForensicsRequest):
     return StreamingResponse(_gen(), media_type="text/event-stream")
 
 
+@app.get("/api/image-forensics/image")
+def serve_forensics_image(filepath: str):
+    """Serve forensics analysis image files (ELA, copy-move, etc)."""
+    try:
+        from pathlib import Path
+        p = Path(filepath)
+        if not p.exists():
+            raise HTTPException(status_code=404, detail="Image not found")
+        with open(p, "rb") as f:
+            data = f.read()
+        suffix = p.suffix.lower()
+        media = "image/png" if suffix == ".png" else "image/jpeg"
+        return Response(content=data, media_type=media)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Image not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ── LLM proxy (so the frontend doesn't need a client-side API key) ────────────
 
 class LLMChatRequest(BaseModel):
