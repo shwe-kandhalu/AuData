@@ -18,7 +18,7 @@ import {
   AlertTriangle, CheckCircle2, XCircle, Loader2, Sparkles, Play, Hash, Database, Quote,
 } from "lucide-react";
 import { useStore } from "../lib/store";
-import { AuditStore } from "../lib/apiClient";
+import { AuditStore, AuditsService } from "../lib/apiClient";
 
 type Stage = "Ingest" | "Detect" | "Reliability" | "Report" | "Manage";
 
@@ -264,14 +264,46 @@ function extractJson(text: string): string {
 
 export function NumericalPage() {
   const store = useStore();
-  const { paperUnderAudit: paper, setPage, model } = store;
+  const { paperUnderAudit: paper, setPaperUnderAudit, setPage, model } = store;
   const auditKey = paper?.id || "__none__";
   const claudeModel = model.startsWith("claude") ? model : "claude-sonnet-4-6";
   const comparisonRef = useRef<HTMLDivElement>(null);
   // ── paper text (auto-fills from ingested paper) ──────────────────────
   const [paperText, setPaperText] = useState("");
+  const [paperTextLoading, setPaperTextLoading] = useState(false);
+  const [paperTextMsg, setPaperTextMsg] = useState("");
   useEffect(() => {
-    if (paper?.has_full_text && paper.full_text && !paperText) setPaperText(paper.full_text);
+    let cancelled = false;
+
+    async function loadPaperText() {
+      setPaperText("");
+      setPaperTextMsg("");
+      if (!paper) return;
+      if (paper.full_text?.trim()) {
+        setPaperText(paper.full_text);
+        return;
+      }
+      if (!paper.has_full_text) {
+        setPaperTextMsg("No full text is available for this paper, so numerical consistency cannot run yet.");
+        return;
+      }
+
+      setPaperTextLoading(true);
+      setPaperTextMsg("Loading paper text...");
+      const fullPaper = await AuditsService.getPaper(paper.id);
+      if (cancelled) return;
+      if (fullPaper?.full_text?.trim()) {
+        setPaperText(fullPaper.full_text);
+        setPaperUnderAudit(fullPaper);
+        setPaperTextMsg("");
+      } else {
+        setPaperTextMsg("Could not load the paper text. Re-ingest the PDF or DOI, then try again.");
+      }
+      setPaperTextLoading(false);
+    }
+
+    loadPaperText();
+    return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paper?.id]);
 
@@ -331,7 +363,10 @@ Check each category and return ONLY valid JSON in this exact format:
 If a category has no numbers to check, say so in the summary. flags array may be empty.` }],
         }),
       });
-      if (!res.ok) throw new Error(`API error ${res.status}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as any;
+        throw new Error(err?.detail ?? `API error ${res.status}`);
+      }
       const data = await res.json() as any;
       const textBlock = data.content?.find((b: any) => b.type === "text");
       const parsed = JSON.parse(extractJson(textBlock?.text ?? "{}"));
@@ -665,12 +700,20 @@ Return ONLY valid JSON (no markdown, no preamble):
                   Flags where numbers contradict each other — subgroup Ns, percentages, table vs prose, implausible values.
                 </p>
               </div>
-              <Button size="sm" onClick={runConsistency} disabled={consistencyBusy || !paperText}>
+              <Button size="sm" onClick={runConsistency} disabled={consistencyBusy || paperTextLoading || !paperText.trim()}>
                 {consistencyBusy ? <><Loader2 className="size-3.5 mr-1.5 animate-spin" />Analyzing…</> : <><Play className="size-3.5 mr-1.5" />Run check</>}
               </Button>
             </div>
           </div>
         </div>
+
+        {(paperTextLoading || paperTextMsg || consistencyMsg) && (
+          <div className={`mt-3 flex items-start gap-2 text-sm ${consistencyMsg.startsWith("Error:") || paperTextMsg.startsWith("Could not") || paperTextMsg.startsWith("No full text") ? "text-amber-600" : "text-muted-foreground"}`}>
+            {paperTextLoading && <Loader2 className="size-4 mt-0.5 shrink-0 animate-spin" />}
+            {!paperTextLoading && (consistencyMsg.startsWith("Error:") || paperTextMsg) && <AlertTriangle className="size-4 mt-0.5 shrink-0" />}
+            <span>{paperTextLoading ? paperTextMsg : consistencyMsg || paperTextMsg}</span>
+          </div>
+        )}
 
         {(consistencyBusy || consistencyFlags !== null) && (
           <div className="mt-4 space-y-2 py-1">
