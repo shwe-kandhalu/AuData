@@ -15,7 +15,7 @@ import { Button } from "../components/ui/button";
 import {
   LayoutDashboard, Upload, Calculator, Image as ImageIcon,
   GitCompare, BookMarked, Gauge, ShieldCheck, FileText, Users, Construction,
-  AlertTriangle, CheckCircle2, XCircle, Loader2, Sparkles,
+  AlertTriangle, CheckCircle2, XCircle, Loader2, Sparkles, Play, Hash, Database, Quote,
 } from "lucide-react";
 import { useStore } from "../lib/store";
 
@@ -570,52 +570,53 @@ Return ONLY valid JSON (no markdown, no preamble):
 
   // ── Render ────────────────────────────────────────────────────────────
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
 
-      {/* Paper banner */}
-      {!paper ? (
-        <Card className="p-4 border-dashed">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-sm text-muted-foreground">No paper loaded — go to Ingest first to upload a PDF or fetch by DOI.</p>
-            <Button size="sm" variant="outline" onClick={() => setPage("ingest")}>
-              <Upload className="size-4 mr-1.5" /> Go to Ingest
-            </Button>
-          </div>
-        </Card>
-      ) : (
-        <Card className="p-4 bg-primary/5 border-primary/20">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">Paper under audit</p>
-              <p className="text-sm font-semibold truncate">{paper.title || "(untitled)"}</p>
-              <p className="text-xs text-muted-foreground">{[paper.authors, paper.year].filter(Boolean).join(" · ")}</p>
-            </div>
-            <div className="flex gap-1.5 shrink-0">
-              {paper.has_full_text
-                ? <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/30 text-xs">Full text</Badge>
-                : <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/30 text-xs">Abstract only</Badge>}
+      {/* Page header — matches MethodsClaimsPage pattern */}
+      <Card className="p-4">
+        <div className="flex items-start gap-3">
+          <div className="rounded-lg bg-primary/10 p-2 shrink-0"><Gauge className="size-5 text-primary" /></div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold">Numerical Consistency</h2>
+                {paper ? (
+                  <p className="text-xs text-muted-foreground truncate">
+                    Auditing <span className="font-medium text-foreground">{paper.title || paper.id}</span> for internal numeric contradictions and dataset mismatches
+                  </p>
+                ) : <p className="text-xs text-amber-600">No paper ingested — go to the Ingest tab first.</p>}
+              </div>
+              {!paper && (
+                <Button size="sm" variant="outline" onClick={() => setPage("ingest")}>
+                  <Upload className="size-4 mr-1.5" />Go to Ingest
+                </Button>
+              )}
             </div>
           </div>
-        </Card>
-      )}
-
+        </div>
+      </Card>
 
       {/* 1. Internal Consistency */}
-      <Card className="p-5 space-y-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h3 className="font-semibold">Internal Consistency</h3>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              Claude reads the full paper and flags every place where numbers contradict each other — subgroup Ns that don't sum to the total, percentages that don't match their counts, the same value reported differently in tables vs prose, and implausible means or sample sizes.
-            </p>
+      <Card className="p-4">
+        <div className="flex items-start gap-3">
+          <div className="rounded-lg bg-primary/10 p-2 shrink-0"><Hash className="size-4 text-primary" /></div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold">Internal Consistency</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Flags where numbers contradict each other — subgroup Ns, percentages, table vs prose, implausible values.
+                </p>
+              </div>
+              <Button size="sm" onClick={runConsistency} disabled={consistencyBusy || !paperText}>
+                {consistencyBusy ? <><Loader2 className="size-3.5 mr-1.5 animate-spin" />Analyzing…</> : <><Play className="size-3.5 mr-1.5" />Run check</>}
+              </Button>
+            </div>
           </div>
-          <Button size="sm" onClick={runConsistency} disabled={consistencyBusy || !paperText}>
-            {consistencyBusy ? <><Loader2 className="size-3.5 mr-1.5 animate-spin" />Analyzing…</> : "Run check"}
-          </Button>
         </div>
 
         {(consistencyBusy || consistencyFlags !== null) && (
-          <div className="space-y-2 py-1">
+          <div className="mt-4 space-y-2 py-1">
             {CONSISTENCY_STEPS.map((step, i) => {
               const stepFlags = consistencyFlags?.filter(f =>
                 step.type === "other"
@@ -680,25 +681,30 @@ Return ONLY valid JSON (no markdown, no preamble):
       </Card>
 
       {/* 2. Qualitative Claims */}
-      <Card className="p-5 space-y-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h3 className="font-semibold">Qualitative Claim Consistency</h3>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              Checks that words like "majority", "most", "few", "nearly all" actually match the numbers reported — e.g. if the paper says "the majority were female", the percentage should exceed 50%.
-            </p>
+      <Card className="p-4">
+        <div className="flex items-start gap-3">
+          <div className="rounded-lg bg-primary/10 p-2 shrink-0"><Quote className="size-4 text-primary" /></div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold">Qualitative Claim Consistency</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Checks that words like "majority", "most", "few", "nearly all" actually match the numbers reported.
+                </p>
+              </div>
+              <Button size="sm" variant="outline" onClick={extractQualClaims} disabled={extractingQual}>
+                {extractingQual ? <><Loader2 className="size-3.5 mr-1.5 animate-spin" />Checking…</> : <><Sparkles className="size-3.5 mr-1.5" />Extract &amp; check</>}
+              </Button>
+            </div>
           </div>
-          <Button size="sm" variant="outline" onClick={extractQualClaims} disabled={extractingQual}>
-            {extractingQual ? <><Loader2 className="size-3.5 mr-1.5 animate-spin" />Checking…</> : <><Sparkles className="size-3.5 mr-1.5" />Extract &amp; check</>}
-          </Button>
         </div>
 
         {qualMsg && (
-          <p className={`text-sm ${qualClaims.some(c => c.pass === false) ? "text-amber-600" : "text-muted-foreground"}`}>{qualMsg}</p>
+          <p className={`mt-3 text-sm ${qualClaims.some(c => c.pass === false) ? "text-amber-600" : "text-muted-foreground"}`}>{qualMsg}</p>
         )}
 
         {qualClaims.length > 0 && (
-          <div className="space-y-2">
+          <div className="mt-3 space-y-2">
             {qualClaims.map(c => (
               <div key={c.id} className={`border rounded-lg p-3 space-y-1 ${c.pass === false ? "border-red-300 bg-red-50/50" : c.pass === true ? "border-emerald-200 bg-emerald-50/30" : ""}`}>
                 <div className="flex items-start gap-2">
@@ -723,30 +729,35 @@ Return ONLY valid JSON (no markdown, no preamble):
       </Card>
 
       {/* 3. Numbers vs Dataset */}
-      <Card className="p-5 space-y-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h3 className="font-semibold">Numbers vs Dataset</h3>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              Searches the paper for links to public datasets (OSF, Zenodo, Figshare, GitHub, Dryad, etc.), downloads the raw data via Browserbase, and compares reported numbers against the actual dataset.
-            </p>
+      <Card className="p-4">
+        <div className="flex items-start gap-3">
+          <div className="rounded-lg bg-primary/10 p-2 shrink-0"><Database className="size-4 text-primary" /></div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold">Numbers vs Dataset</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Finds public datasets linked in the paper (Zenodo, Dryad, OSF, etc.) and compares reported numbers against the actual data.
+                </p>
+              </div>
+              <Button size="sm" variant="outline" onClick={findDataset} disabled={datasetBusy}>
+                {datasetBusy
+                  ? <><Loader2 className="size-3.5 mr-1.5 animate-spin" />Searching…</>
+                  : <><Sparkles className="size-3.5 mr-1.5" />Find &amp; verify</>}
+              </Button>
+            </div>
           </div>
-          <Button size="sm" variant="outline" onClick={findDataset} disabled={datasetBusy}>
-            {datasetBusy
-              ? <><Loader2 className="size-3.5 mr-1.5 animate-spin" />Searching…</>
-              : <><Sparkles className="size-3.5 mr-1.5" />Find &amp; verify dataset</>}
-          </Button>
         </div>
 
         {datasetMsg && (
-          <div className={`flex items-start gap-2 text-sm ${datasetResult?.flag === "no_public_dataset" ? "text-amber-600" : "text-muted-foreground"}`}>
+          <div className={`mt-3 flex items-start gap-2 text-sm ${datasetResult?.flag === "no_public_dataset" ? "text-amber-600" : "text-muted-foreground"}`}>
             {datasetResult?.flag === "no_public_dataset" && <AlertTriangle className="size-4 mt-0.5 shrink-0" />}
             <span>{datasetMsg}</span>
           </div>
         )}
 
         {datasetResult?.flag === "no_public_dataset" && (
-          <div className="rounded-lg border border-amber-300 bg-amber-50/50 p-3 text-sm text-amber-800">
+          <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50/50 p-3 text-sm text-amber-800">
             <strong>No public dataset</strong> — this paper does not link to any open repository. Raw data cannot be independently verified.
             {!datasetResult.has_availability_statement && (
               <span className="block mt-1 text-xs">No data availability statement detected either.</span>
@@ -755,7 +766,7 @@ Return ONLY valid JSON (no markdown, no preamble):
         )}
 
         {datasetResult && datasetResult.links.length > 0 && (
-          <div className="space-y-3">
+          <div className="mt-3 space-y-3">
             {datasetResult.links.map((link, i) => {
               const ds = datasetResult.datasets.find(d => d.link.url === link.url);
               return (
@@ -820,7 +831,7 @@ Return ONLY valid JSON (no markdown, no preamble):
         {datasetComparison && (() => { // eslint-disable-line
           const { result } = datasetComparison;
           return (
-            <div ref={comparisonRef} className="border-t pt-4 space-y-3">
+            <div ref={comparisonRef} className="mt-4 border-t pt-4 space-y-3">
               <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Dataset comparison</div>
 
               {result.summary && (
