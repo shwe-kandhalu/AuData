@@ -195,10 +195,6 @@ export function DashboardPage() {
           );
         })}
       </div>
-
-      <p className="text-center text-xs text-muted-foreground">
-        Run detectors here; open the <button className="text-primary hover:underline" onClick={() => s.setPage("report")}>Audit Report</button> for the consolidated, exportable findings.
-      </p>
     </div>
   );
 }

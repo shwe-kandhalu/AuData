@@ -404,6 +404,13 @@ def detect_splice_boundaries(image_path: str, output_dir: str) -> Dict[str, Any]
         mu = float(np.mean(profile))
         sd = float(np.std(profile)) + 1e-6
         z = (profile - mu) / sd
+        # Suppress the outer margin: a strong straight edge at a figure's border
+        # is almost always a panel frame or plot axis, not a splice. This is the
+        # main source of false positives, so we ignore the outer 8% on each side.
+        n = len(z)
+        m = max(1, int(n * 0.08))
+        z[:m] = 0.0
+        z[-m:] = 0.0
         idx = int(np.argmax(z))
         return float(z[idx]), idx
 
@@ -411,7 +418,9 @@ def detect_splice_boundaries(image_path: str, output_dir: str) -> Dict[str, Any]
     hz, hy = max_z(horizontal_profile)
 
     max_signal = max(vz, hz)
-    score = normalize_score(max_signal, 3.0, 8.0)
+    # Raise the bar so only strong, isolated interior discontinuities flag; plot
+    # axes, colorbars, and panel seams should not be enough on their own.
+    score = normalize_score(max_signal, 5.0, 11.0)
 
     overlay = img.copy()
     if vz >= 3.0:
@@ -428,7 +437,7 @@ def detect_splice_boundaries(image_path: str, output_dir: str) -> Dict[str, Any]
         "max_vertical_z": round(float(vz), 4),
         "max_horizontal_z": round(float(hz), 4),
         "overlay_path": overlay_path,
-        "severity": "high" if score >= 0.65 else "moderate" if score >= 0.35 else "low",
+        "severity": "high" if score >= 0.85 else "moderate" if score >= 0.6 else "low",
     }
 
 def analyze_images(image_paths: List[str], out_dir: str, duplicate_threshold: float = 0.80) -> Dict[str, Any]:
@@ -874,6 +883,32 @@ def vlm_assess(image_path: str, model_name: str = "", timeout: float = 60.0) -> 
         return None
 
 
+def looks_photographic(image_path: str) -> bool:
+    """True for continuous-tone figures (blots, gels, micrographs, photos);
+    False for schematics, flowcharts, and plots.
+
+    Splice, copy-move, and ELA only make sense on photographic content. On
+    line-art (boxes, arrows, axis lines, text) they fire on ordinary sharp edges
+    and repeated identical shapes, producing false positives, so we use this to
+    skip manipulation forensics for non-photographic figures.
+    """
+    img = cv2.imread(str(image_path))
+    if img is None:
+        return True  # unreadable: let downstream handle it
+    small = cv2.resize(img, (160, 160), interpolation=cv2.INTER_AREA)
+    gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+    hist = cv2.calcHist([gray], [0], None, [256], [0, 256]).flatten()
+    top_gray = float(np.sort(hist)[-8:].sum() / (hist.sum() + 1e-6))  # tonal concentration
+    uniq = len(np.unique((small // 32).reshape(-1, 3), axis=0))       # colour richness
+    # Obvious line-art (schematic, flowchart, plot) is both colour-poor and
+    # tonally concentrated (flat fills + a uniform background). Default to
+    # photographic so we never suppress real blots, gels, or micrographs, which
+    # are tonally rich (low top_gray) even when they use few colours.
+    if uniq < 60 and top_gray > 0.85:
+        return False
+    return True
+
+
 def run_single_figure_forensics(target_figures: List[Dict[str, Any]], output_root: str,
                                 use_vlm: bool = False) -> List[Dict[str, Any]]:
     """
@@ -888,14 +923,23 @@ def run_single_figure_forensics(target_figures: List[Dict[str, Any]], output_roo
     for fig in target_figures:
         image_path = fig["image_path"]
         try:
-            ela_path = ela_analysis(image_path, forensic_dir)
-            copy_move = copy_move_detection(image_path, forensic_dir)
-            splice_result = detect_splice_boundaries(image_path, forensic_dir)
+            photographic = looks_photographic(image_path)
+            if photographic:
+                ela_path = ela_analysis(image_path, forensic_dir)
+                copy_move = copy_move_detection(image_path, forensic_dir)
+                splice_result = detect_splice_boundaries(image_path, forensic_dir)
+            else:
+                # Schematic / flowchart / plot: manipulation forensics produce
+                # false positives on line-art, so skip them for this figure.
+                ela_path = None
+                copy_move = {"severity": "none", "skipped": "non-photographic figure"}
+                splice_result = {"severity": "none", "skipped": "non-photographic figure"}
             vlm_result = vlm_assess(image_path) if use_vlm else None
 
             results.append({
                 "image_path": image_path,
                 "metadata": fig,
+                "figure_kind": "photographic" if photographic else "line-art/diagram",
                 "ela_output_path": ela_path,
                 "copy_move_result": copy_move,
                 "splice_result": splice_result,
