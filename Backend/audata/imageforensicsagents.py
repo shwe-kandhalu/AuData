@@ -848,7 +848,7 @@ def vlm_assess(image_path: str, model_name: str = "", timeout: float = 60.0) -> 
     """Best-effort multimodal judgement (Qwen-VL / MedGemma via Ollama) of whether a
     figure looks manipulated or AI-generated. Returns None if no vision model responds,
     so it never breaks the deterministic checks."""
-    name = model_name or os.getenv("MODEL_VISION") or "qwen2.5vl:7b"
+    name = model_name or os.getenv("MODEL_VISION") or "qwen3-vl:8b"
     try:
         import base64
         import requests
@@ -928,13 +928,16 @@ def run_single_figure_forensics(target_figures: List[Dict[str, Any]], output_roo
                 ela_path = ela_analysis(image_path, forensic_dir)
                 copy_move = copy_move_detection(image_path, forensic_dir)
                 splice_result = detect_splice_boundaries(image_path, forensic_dir)
+                # Vision-model integrity check runs natively (local Ollama VLM) on
+                # photographic figures, where manipulation / AI-generation matters.
+                vlm_result = vlm_assess(image_path) if use_vlm else None
             else:
                 # Schematic / flowchart / plot: manipulation forensics produce
                 # false positives on line-art, so skip them for this figure.
                 ela_path = None
                 copy_move = {"severity": "none", "skipped": "non-photographic figure"}
                 splice_result = {"severity": "none", "skipped": "non-photographic figure"}
-            vlm_result = vlm_assess(image_path) if use_vlm else None
+                vlm_result = None
 
             results.append({
                 "image_path": image_path,

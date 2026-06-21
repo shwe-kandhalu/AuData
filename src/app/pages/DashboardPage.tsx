@@ -28,6 +28,11 @@ type Detector = {
 
 const DETECTORS: Detector[] = [
   {
+    key: "numerical", label: "Numerical Consistency", icon: Hash, page: "numerical",
+    run: (p) => NumericalConsistencyService.checkPaper(p.id), storeSetter: "setNumericalAudits",
+    flagged: (d) => d?.summary?.flagged ?? (d?.flags || []).length, total: (d) => d?.summary?.checked,
+  },
+  {
     key: "statcheck", label: "Statistical Recompute", icon: Calculator, page: "recompute",
     run: (p) => StatisticalAuditService.recompute(p), storeSetter: "setStatcheckAudits",
     flagged: (d) => d?.mismatch_count ?? 0, total: (d) => d?.claim_count,
@@ -36,11 +41,6 @@ const DETECTORS: Detector[] = [
     key: "meta", label: "Meta-analysis", icon: Sigma, page: "recompute",
     run: (p) => MetaRecreateService.checkPaper(p.id), storeSetter: "setMetaAudits",
     flagged: (d) => (d?.verdict === "discrepancy" ? 1 : 0), total: (d) => (d?.detected ? 1 : 0),
-  },
-  {
-    key: "numerical", label: "Numerical Consistency", icon: Hash, page: "numerical",
-    run: (p) => NumericalConsistencyService.checkPaper(p.id), storeSetter: "setNumericalAudits",
-    flagged: (d) => d?.summary?.flagged ?? (d?.flags || []).length, total: (d) => d?.summary?.checked,
   },
   {
     key: "images", label: "Image Forensics", icon: ImageIcon, page: "imaging", needsPdf: true,

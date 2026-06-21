@@ -44,9 +44,7 @@ export function ImageForensicsPage() {
   const [running, setRunning] = useState(false);
   const [summary, setSummary] = useState<ImageForensicsSummary | null>(null);
   const [report, setReport] = useState<ImageForensicsReport | null>(null);
-  const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [useVlm, setUseVlm] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   const auditKey = paper?.id || "__none__";
@@ -56,7 +54,6 @@ export function ImageForensicsPage() {
       if (cancelled) return;
       setSummary(a?.summary || null);
       setReport(a?.report || null);
-      setNote(a?.note || null);
     };
     const local = s.imageAudits?.[auditKey];
     if (local) apply(local);
@@ -72,7 +69,7 @@ export function ImageForensicsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auditKey, s.imageAudits?.[auditKey]]);
 
-  function persist(patch: Partial<{ summary: ImageForensicsSummary | null; report: ImageForensicsReport | null; note: string | null }>) {
+  function persist(patch: Partial<{ summary: ImageForensicsSummary | null; report: ImageForensicsReport | null }>) {
     const prev = s.imageAudits?.[auditKey] || {};
     const entry = { ...prev, ...patch, ranAt: Date.now() };
     s.setImageAudits?.({ ...(s.imageAudits || {}), [auditKey]: entry });
@@ -82,14 +79,13 @@ export function ImageForensicsPage() {
   async function run() {
     if (!paper) { setError("Ingest a paper first."); return; }
     if (!paper.has_pdf) { setError("Paper has no PDF — figure extraction requires the full PDF."); return; }
-    setError(null); setNote(null); setSummary(null); setReport(null); setRunning(true);
+    setError(null); setSummary(null); setReport(null); setRunning(true);
     const ac = new AbortController();
     abortRef.current = ac;
     try {
-      const out = await ImageForensicsService.checkPaper(paper.id, { signal: ac.signal, useVlm });
+      const out = await ImageForensicsService.checkPaper(paper.id, { signal: ac.signal, useVlm: true });
       setSummary(out.summary); setReport(out.report);
-      if (out.note) setNote(out.note);
-      persist({ summary: out.summary, report: out.report, note: out.note });
+      persist({ summary: out.summary, report: out.report });
     } catch (e: any) {
       if (e?.name !== "AbortError") setError(e?.message || "Image forensics check failed.");
     } finally { setRunning(false); abortRef.current = null; }
@@ -183,10 +179,6 @@ export function ImageForensicsPage() {
           ) : (
             <Button size="sm" onClick={run} disabled={!paper} className="shrink-0"><Play className="mr-1.5 size-4" />{summary ? "Re-analyze" : "Analyze figures"}</Button>
           )}
-          <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground" title="Also ask a local vision model whether each figure looks manipulated or AI-generated (slower).">
-            <input type="checkbox" checked={useVlm} onChange={(e) => setUseVlm(e.target.checked)} className="size-3.5" />
-            Vision-model check
-          </label>
           {summary && (
             <>
               <Stat label="Figures analyzed" value={analyzed} />
@@ -200,8 +192,7 @@ export function ImageForensicsPage() {
         </div>
         {!paper && <p className="mt-2 text-xs text-amber-600">No paper ingested — go to the Ingest tab first.</p>}
         {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
-        {note && <p className="mt-2 text-xs text-muted-foreground">{note}</p>}
-        {running && <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />Extracting figures and comparing… this can take a minute.</p>}
+        {running && <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />Extracting figures, comparing, and running the vision model… this can take a minute.</p>}
       </Card>
 
       {summary && (

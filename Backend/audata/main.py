@@ -909,7 +909,7 @@ class ImageForensicsRequest(BaseModel):
     paper_id: str
     candidate_paper_ids: Optional[List[str]] = None
     similarity_threshold: int = 8
-    use_vlm: bool = False
+    use_vlm: bool = True
 
 
 @app.post("/api/image-forensics/check-paper/stream")
