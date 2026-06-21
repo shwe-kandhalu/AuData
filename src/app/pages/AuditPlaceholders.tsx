@@ -262,7 +262,8 @@ function extractJson(text: string): string {
 }
 
 export function NumericalPage() {
-  const { paperUnderAudit: paper, setPage } = useStore();
+  const { paperUnderAudit: paper, setPage, model } = useStore();
+  const claudeModel = model.startsWith("claude") ? model : "claude-sonnet-4-6";
   const comparisonRef = useRef<HTMLDivElement>(null);
   // ── paper text (auto-fills from ingested paper) ──────────────────────
   const [paperText, setPaperText] = useState("");
@@ -311,7 +312,7 @@ export function NumericalPage() {
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          model: "claude-sonnet-4-6",
+          model: claudeModel,
           max_tokens: 4096,
           messages: [{ role: "user", content: `You are a biomedical research-integrity auditor. Read this paper carefully and check for internal numerical consistency across five categories. For EVERY category you must write a summary of what you actually found — even if everything checks out.
 
@@ -411,7 +412,7 @@ ${paperText.slice(0, 20000)}
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          model: "claude-haiku-4-5-20251001",
+          model: claudeModel,
           max_tokens: 2048,
           messages: [{ role: "user", content: prompt }],
         }),
@@ -551,7 +552,7 @@ Return ONLY valid JSON (no markdown, no preamble):
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          model: "claude-sonnet-4-6",
+          model: claudeModel,
           max_tokens: 2048,
           messages: [{ role: "user", content: prompt }],
         }),
