@@ -78,9 +78,13 @@ function Shell() {
         <header className="border-b bg-card/50 backdrop-blur sticky top-0 z-20 px-6 py-4">
           <div className="max-w-6xl mx-auto flex items-center gap-3">
             <Icon className="size-6 text-primary" />
-            <div className="flex-1">
+            <div className="flex-1 min-w-0">
               <h1>{meta.title}</h1>
-              <p className="text-sm text-muted-foreground">{meta.subtitle}</p>
+              <p className="text-sm text-muted-foreground truncate">
+                {s.paperUnderAudit && !["dashboard", "audits", "ingest"].includes(s.page)
+                  ? (s.paperUnderAudit.title || s.paperUnderAudit.id)
+                  : meta.subtitle}
+              </p>
             </div>
             {s.currentProjectId && (
               <button

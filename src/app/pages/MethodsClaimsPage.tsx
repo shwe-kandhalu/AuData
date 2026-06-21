@@ -10,7 +10,7 @@ import { Badge } from "../components/ui/badge";
 import { Checkbox } from "../components/ui/checkbox";
 import { Input } from "../components/ui/input";
 import {
-  GitCompare, Play, Loader2, X, Check, Download, Search, FileSearch, Lightbulb,
+  Play, Loader2, X, Check, Download, Search, FileSearch, Lightbulb,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { PdfHighlightViewer } from "../components/PdfHighlightViewer";
@@ -148,46 +148,33 @@ export function MethodsClaimsPage() {
 
   return (
     <div className="space-y-4">
-      <Card className="p-4">
-        <div className="flex items-start gap-3">
-          <div className="rounded-lg bg-primary/10 p-2 shrink-0"><GitCompare className="size-5 text-primary" /></div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="min-w-0">
-                <h2 className="text-base font-semibold">Methods ↔ Claims</h2>
-                {paper ? (
-                  <p className="text-xs text-muted-foreground truncate">
-                    Checking whether <span className="font-medium text-foreground">{paper.title || paper.id}</span> over-claims relative to its methods &amp; results
-                  </p>
-                ) : <p className="text-xs text-amber-600">No paper ingested — go to the Ingest tab first.</p>}
-              </div>
-              {running ? (
-                <Button variant="outline" size="sm" onClick={() => abortRef.current?.abort()}><X className="size-4 mr-1.5" />Cancel</Button>
-              ) : (
-                <Button size="sm" onClick={run} disabled={!paper}><Play className="size-4 mr-1.5" />Run check</Button>
-              )}
-            </div>
-            {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
-            {note && <p className="text-sm text-muted-foreground mt-2">{note}</p>}
-          </div>
-        </div>
-      </Card>
-
-      {(running || results.length > 0) && (
-        <Card className="p-3">
-          <div className="flex flex-wrap items-center gap-4">
-            {running && <span className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />Assessing claims… {results.length}</span>}
-            <Stat label="Claims" value={summary?.total ?? results.length} />
-            <Stat label="Flagged" value={summary?.flagged ?? results.filter((r) => r.status === "flagged").length} tone="amber" />
-            <Stat label="Supported" value={summary?.supported ?? results.filter((r) => r.verdict === "supported").length} tone="green" />
-            <div className="flex-1" />
+      <Card className="p-3">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          {running ? (
+            <Button variant="outline" size="sm" onClick={() => abortRef.current?.abort()} className="shrink-0"><X className="size-4 mr-1.5" />Cancel</Button>
+          ) : (
+            <Button size="sm" onClick={run} disabled={!paper} className="shrink-0"><Play className="size-4 mr-1.5" />{results.length ? "Re-run" : "Run check"}</Button>
+          )}
+          {running && <span className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />Assessing claims… {results.length}</span>}
+          {(results.length > 0 || running) && (
+            <>
+              <Stat label="Claims" value={summary?.total ?? results.length} />
+              <Stat label="Flagged" value={summary?.flagged ?? results.filter((r) => r.status === "flagged").length} tone="amber" />
+              <Stat label="Supported" value={summary?.supported ?? results.filter((r) => r.verdict === "supported").length} tone="green" />
+            </>
+          )}
+          <div className="flex-1" />
+          {results.length > 0 && (
             <Button variant="outline" size="sm" disabled={!results.length}
               onClick={() => downloadCsv(`methods-claims-${(paper?.id || "audit").replace(/[^\w.-]+/g, "_")}.csv`, buildCsv(results, decisions))}>
               <Download className="size-4 mr-1.5" />Export CSV
             </Button>
-          </div>
-        </Card>
-      )}
+          )}
+        </div>
+        {!paper && <p className="text-xs text-amber-600 mt-2">No paper ingested — go to the Ingest tab first.</p>}
+        {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
+        {note && <p className="text-sm text-muted-foreground mt-2">{note}</p>}
+      </Card>
 
       {results.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-[360px_1fr] gap-4">

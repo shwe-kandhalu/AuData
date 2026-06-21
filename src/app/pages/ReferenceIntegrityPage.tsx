@@ -12,7 +12,7 @@ import { Badge } from "../components/ui/badge";
 import { Checkbox } from "../components/ui/checkbox";
 import { Input } from "../components/ui/input";
 import {
-  BookMarked, Play, Loader2, X, Check, AlertTriangle, ExternalLink, Ban, FileQuestion, Download, Search, FileSearch,
+  Play, Loader2, X, Check, AlertTriangle, ExternalLink, Ban, FileQuestion, Download, Search, FileSearch,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { PdfHighlightViewer } from "../components/PdfHighlightViewer";
@@ -185,69 +185,53 @@ export function ReferenceIntegrityPage() {
 
   return (
     <div className="space-y-4">
-      {/* Controls */}
-      <Card className="p-4">
-        <div className="flex items-start gap-3">
-          <div className="rounded-lg bg-primary/10 p-2 shrink-0"><BookMarked className="size-5 text-primary" /></div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="min-w-0">
-                <h2 className="text-base font-semibold">Reference Integrity</h2>
-                {paper ? (
-                  <p className="text-xs text-muted-foreground truncate">
-                    Auditing every reference of <span className="font-medium text-foreground">{paper.title || paper.id}</span>
-                  </p>
-                ) : (
-                  <p className="text-xs text-amber-600">No paper ingested — go to Ingest to audit a paper's references, or paste your own below.</p>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                {running ? (
-                  <Button variant="outline" size="sm" onClick={() => abortRef.current?.abort()}><X className="size-4 mr-1.5" />Cancel</Button>
-                ) : (
-                  <Button size="sm" onClick={run} disabled={!paper && !manualCount}><Play className="size-4 mr-1.5" />Run check</Button>
-                )}
-              </div>
-            </div>
-            {!paper && (
-              <Textarea
-                value={input} onChange={(e) => setInput(e.target.value)} disabled={running}
-                placeholder={"10.1016/j.cell.2020.01.001 | Drug X reduced tumor size in mice.\nSmith et al. 2019, Nature | Protein Y regulates apoptosis."}
-                className="mt-2 min-h-[120px] font-mono text-xs"
-              />
-            )}
-            {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
-          </div>
-        </div>
-      </Card>
-
-      {/* Summary + metrics + export */}
-      {(running || results.length > 0) && (
-        <Card className="p-3 space-y-3">
-          <div className="flex flex-wrap items-center gap-3">
-            {running && <span className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />Checking… {results.length}</span>}
-            <Stat label="Checked" value={summary?.total ?? results.length} />
-            <Stat label="Flagged" value={summary?.flagged ?? results.filter((r) => r.status === "flagged").length} tone="amber" />
-            <Stat label="Retracted" value={summary?.retracted ?? results.filter((r) => r.retracted).length} tone="red" />
-            <Stat label="Unresolved" value={summary?.unresolved ?? results.filter((r) => !r.resolved).length} tone="red" />
-            <div className="flex-1" />
+      {/* Controls + metrics bar */}
+      <Card className="p-3">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          {running ? (
+            <Button variant="outline" size="sm" onClick={() => abortRef.current?.abort()} className="shrink-0"><X className="size-4 mr-1.5" />Cancel</Button>
+          ) : (
+            <Button size="sm" onClick={run} disabled={!paper && !manualCount} className="shrink-0"><Play className="size-4 mr-1.5" />{results.length ? "Re-run" : "Run check"}</Button>
+          )}
+          {running && <span className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />Checking… {results.length}</span>}
+          {(running || results.length > 0) && (
+            <>
+              <Stat label="Checked" value={summary?.total ?? results.length} />
+              <Stat label="Flagged" value={summary?.flagged ?? results.filter((r) => r.status === "flagged").length} tone="amber" />
+              <Stat label="Retracted" value={summary?.retracted ?? results.filter((r) => r.retracted).length} tone="red" />
+              <Stat label="Unresolved" value={summary?.unresolved ?? results.filter((r) => !r.resolved).length} tone="red" />
+            </>
+          )}
+          <div className="flex-1" />
+          {results.length > 0 && (
             <Button variant="outline" size="sm" disabled={!results.length}
               onClick={() => downloadCsv(`reference-integrity-${(paper?.id || "audit").replace(/[^\w.-]+/g, "_")}.csv`, buildCsv(results, decisions))}>
               <Download className="size-4 mr-1.5" />Export CSV
             </Button>
-          </div>
-          {metrics && (
-            <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground border-t pt-2">
-              <Metric label="Self-citation rate" value={`${(metrics.self_citation_rate * 100).toFixed(0)}% (${metrics.self_citations})`} warn={metrics.self_citation_rate >= 0.25} />
-              <Metric label="Uncited in text" value={metrics.uncited_count} warn={metrics.uncited_count > 0} />
-              <Metric label="Duplicates" value={metrics.duplicate_count} warn={metrics.duplicate_count > 0} />
-              <Metric label="Future-dated" value={metrics.future_dated_count} warn={metrics.future_dated_count > 0} />
-              <Metric label="Year range" value={metrics.oldest_year && metrics.newest_year ? `${metrics.oldest_year}–${metrics.newest_year}` : "—"} />
-              <Metric label="Max times one ref cited" value={metrics.most_cited} />
-            </div>
           )}
-        </Card>
-      )}
+        </div>
+        {!paper && (
+          <Textarea
+            value={input} onChange={(e) => setInput(e.target.value)} disabled={running}
+            placeholder={"10.1016/j.cell.2020.01.001 | Drug X reduced tumor size in mice.\nSmith et al. 2019, Nature | Protein Y regulates apoptosis."}
+            className="mt-2 min-h-[120px] font-mono text-xs"
+          />
+        )}
+        {!paper && !running && results.length === 0 && (
+          <p className="text-xs text-amber-600 mt-2">No paper ingested — go to Ingest to audit a paper's references, or paste your own above.</p>
+        )}
+        {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
+        {metrics && (
+          <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 border-t pt-2 text-xs text-muted-foreground">
+            <Metric label="Self-citation rate" value={`${(metrics.self_citation_rate * 100).toFixed(0)}% (${metrics.self_citations})`} warn={metrics.self_citation_rate >= 0.25} />
+            <Metric label="Uncited in text" value={metrics.uncited_count} warn={metrics.uncited_count > 0} />
+            <Metric label="Duplicates" value={metrics.duplicate_count} warn={metrics.duplicate_count > 0} />
+            <Metric label="Future-dated" value={metrics.future_dated_count} warn={metrics.future_dated_count > 0} />
+            <Metric label="Year range" value={metrics.oldest_year && metrics.newest_year ? `${metrics.oldest_year}–${metrics.newest_year}` : "—"} />
+            <Metric label="Max times one ref cited" value={metrics.most_cited} />
+          </div>
+        )}
+      </Card>
 
       {/* Master–detail */}
       {results.length > 0 && (

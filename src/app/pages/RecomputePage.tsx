@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Calculator, CheckCircle2, FileInput, FileSearch, Loader2, Play, XCircle } from "lucide-react";
+import { CheckCircle2, FileInput, FileSearch, Loader2, Play, XCircle } from "lucide-react";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
@@ -137,51 +137,30 @@ export function RecomputePage() {
 
       {view === "stats" && (
       <div className="space-y-4">
-      <Card className="p-4">
-        <div className="flex items-start gap-3">
-          <div className="shrink-0 rounded-lg bg-primary/10 p-2"><Calculator className="size-5 text-primary" /></div>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="min-w-0">
-                <h2 className="text-base font-semibold">Statistical Recompute</h2>
-                <p className="truncate text-xs text-muted-foreground">
-                  Recomputing reported p-values in{" "}
-                  <span className="font-medium text-foreground">{paper.title || paper.id}</span>{" "}
-                  from their test statistics (t, F, chi-square, r)
-                </p>
-                <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                  <Badge variant="outline">{paper.num_pages ?? "?"} pages</Badge>
-                  <Badge variant="outline">{paper.char_count.toLocaleString()} chars</Badge>
-                  <Badge variant="outline">{paper.full_text_source || paper.source}</Badge>
-                </div>
-              </div>
-              <Button onClick={runAudit} disabled={busy || !paper.full_text} size="sm" className="shrink-0">
-                {busy ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : <Play className="mr-1.5 size-4" />}
-                {busy ? "Running…" : "Run"}
-              </Button>
-            </div>
-            {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
-            {!paper.full_text && <p className="mt-2 text-xs text-amber-600">This paper has no extracted full text, so statistics cannot be recomputed.</p>}
-          </div>
+      <Card className="p-3">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <Button onClick={runAudit} disabled={busy || !paper.full_text} size="sm" className="shrink-0">
+            {busy ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : <Play className="mr-1.5 size-4" />}
+            {busy ? "Running…" : result ? "Re-run" : "Run"}
+          </Button>
+          {result && (
+            <>
+              <Stat label="Claims" value={result.claim_count} />
+              <Stat label="Mismatches" value={result.mismatch_count} tone={result.mismatch_count ? "red" : "green"} />
+              <Stat label="Consistent" value={Math.max(0, result.claim_count - result.mismatch_count)} tone="green" />
+            </>
+          )}
+          <span className="hidden text-xs text-muted-foreground lg:inline">Supports t, F, chi-square, r</span>
+          <div className="flex-1" />
+          {findings.length > 0 && (
+            <label className="flex cursor-pointer items-center gap-2 text-[11px] text-muted-foreground">
+              <Checkbox checked={mismatchOnly} onCheckedChange={(v) => setMismatchOnly(v === true)} />Mismatches only
+            </label>
+          )}
         </div>
+        {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+        {!paper.full_text && <p className="mt-2 text-xs text-amber-600">This paper has no extracted full text, so statistics cannot be recomputed.</p>}
       </Card>
-
-      {result && (
-        <Card className="p-3">
-          <div className="flex flex-wrap items-center gap-4">
-            <Stat label="Claims" value={result.claim_count} />
-            <Stat label="Mismatches" value={result.mismatch_count} tone={result.mismatch_count ? "red" : "green"} />
-            <Stat label="Consistent" value={Math.max(0, result.claim_count - result.mismatch_count)} tone="green" />
-            <span className="hidden text-xs text-muted-foreground sm:inline">Supported: t, F, chi-square, r</span>
-            <div className="flex-1" />
-            {findings.length > 0 && (
-              <label className="flex cursor-pointer items-center gap-2 text-[11px] text-muted-foreground">
-                <Checkbox checked={mismatchOnly} onCheckedChange={(v) => setMismatchOnly(v === true)} />Mismatches only
-              </label>
-            )}
-          </div>
-        </Card>
-      )}
 
       {findings.length > 0 && (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-[340px_1fr]">
@@ -365,20 +344,16 @@ function MetaAnalysisSection() {
       : result?.verdict === "recomputed" ? "Recomputed" : "—";
 
   return (
-    <Card className="space-y-3 p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold">Meta-analysis recreation</h3>
-          <p className="max-w-2xl text-xs text-muted-foreground">
-            If this paper is a meta-analysis, re-extract the included studies and recompute the pooled
-            effect (inverse-variance fixed effect and DerSimonian-Laird random effects) to check it against
-            the reported pooled estimate.
-          </p>
-        </div>
+    <Card className="space-y-3 p-3">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <Button size="sm" variant="outline" onClick={run} disabled={!paper || running} className="shrink-0 gap-2">
           {running ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
-          {running ? "Recreating…" : "Recreate meta-analysis"}
+          {running ? "Recreating…" : result ? "Re-run" : "Recreate meta-analysis"}
         </Button>
+        {result?.detected && rc && (
+          <span className="text-xs capitalize text-muted-foreground">{result.measure} · {result.model}-effects · {rc.k ?? 0} studies</span>
+        )}
+        <span className="hidden text-xs text-muted-foreground lg:inline">Inverse-variance fixed + DerSimonian-Laird random effects</span>
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}

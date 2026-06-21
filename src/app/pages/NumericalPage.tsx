@@ -9,7 +9,7 @@ import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { Checkbox } from "../components/ui/checkbox";
-import { Hash, Play, Loader2, X, Check, Download, FileSearch, Database, ChevronDown, ChevronRight } from "lucide-react";
+import { Play, Loader2, X, Check, Download, FileSearch, Database, ChevronDown, ChevronRight } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { PdfHighlightViewer } from "../components/PdfHighlightViewer";
 import { useStore } from "../lib/store";
@@ -134,48 +134,36 @@ export function NumericalPage() {
 
   return (
     <div className="space-y-4">
-      <Card className="p-4">
-        <div className="flex items-start gap-3">
-          <div className="shrink-0 rounded-lg bg-primary/10 p-2"><Hash className="size-5 text-primary" /></div>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="min-w-0">
-                <h2 className="text-base font-semibold">Numerical Consistency</h2>
-                {paper ? (
-                  <p className="truncate text-xs text-muted-foreground">
-                    Checking percentages, sums, tables, implausible values, and quantifiers in{" "}
-                    <span className="font-medium text-foreground">{paper.title || paper.id}</span>
-                  </p>
-                ) : <p className="text-xs text-amber-600">No paper ingested — go to the Ingest tab first.</p>}
-              </div>
-              <Button size="sm" onClick={run} disabled={!paper || running}>
-                {running ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : <Play className="mr-1.5 size-4" />}
-                {running ? "Checking…" : "Run checks"}
-              </Button>
-            </div>
-            {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
-            {result?.note && <p className="mt-2 text-sm text-muted-foreground">{result.note}</p>}
-          </div>
-        </div>
-      </Card>
-
-      {result && (
-        <>
-          <Card className="p-3">
-            <div className="flex flex-wrap items-center gap-4">
+      <Card className="p-3">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <Button size="sm" onClick={run} disabled={!paper || running} className="shrink-0">
+            {running ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : <Play className="mr-1.5 size-4" />}
+            {running ? "Checking…" : result ? "Re-run" : "Run checks"}
+          </Button>
+          {result && (
+            <>
               <Stat label="Categories checked" value={result.summary?.checked ?? CATEGORIES.length} />
               <Stat label="Inconsistencies" value={result.summary?.flagged ?? flags.length} tone={flags.length ? "red" : "green"} />
               {(["high", "medium", "low"] as const).map((k) => result.summary?.by_severity?.[k] ? (
                 <Badge key={k} variant="outline" className={SEV_STYLE[k] + " capitalize"}>{result.summary.by_severity[k]} {k}</Badge>
               ) : null)}
-              <div className="flex-1" />
-              <Button variant="outline" size="sm" disabled={!flags.length}
-                onClick={() => downloadCsv(`numerical-${(paper?.id || "audit").replace(/[^\w.-]+/g, "_")}.csv`, flags, decisions)}>
-                <Download className="mr-1.5 size-4" />Export CSV
-              </Button>
-            </div>
-          </Card>
+            </>
+          )}
+          <div className="flex-1" />
+          {result && (
+            <Button variant="outline" size="sm" disabled={!flags.length}
+              onClick={() => downloadCsv(`numerical-${(paper?.id || "audit").replace(/[^\w.-]+/g, "_")}.csv`, flags, decisions)}>
+              <Download className="mr-1.5 size-4" />Export CSV
+            </Button>
+          )}
+        </div>
+        {!paper && <p className="mt-2 text-xs text-amber-600">No paper ingested — go to the Ingest tab first.</p>}
+        {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+        {result?.note && <p className="mt-2 text-sm text-muted-foreground">{result.note}</p>}
+      </Card>
 
+      {result && (
+        <>
           {/* per-category summaries */}
           {result.summaries && Object.keys(result.summaries).length > 0 && (
             <Card className="p-4">

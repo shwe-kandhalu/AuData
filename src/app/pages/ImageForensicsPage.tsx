@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
-import { Image as ImageIcon, Play, Loader2, X, CheckCircle, Copy, Scissors, Sparkles, Files } from "lucide-react";
+import { Play, Loader2, X, CheckCircle, Copy, Scissors, Sparkles, Files } from "lucide-react";
 import { useStore } from "../lib/store";
 import {
   ImageForensicsService, AuditStore, apiConfig, type ImageForensicsSummary, type ImageForensicsReport,
@@ -176,52 +176,36 @@ export function ImageForensicsPage() {
 
   return (
     <div className="space-y-4">
-      <Card className="p-4">
-        <div className="flex items-start gap-3">
-          <div className="shrink-0 rounded-lg bg-primary/10 p-2"><ImageIcon className="size-5 text-primary" /></div>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="min-w-0">
-                <h2 className="text-base font-semibold">Image Forensics</h2>
-                {paper ? (
-                  <p className="truncate text-xs text-muted-foreground">
-                    Screening figures for cloning, splicing, and cross-paper reuse in{" "}
-                    <span className="font-medium text-foreground">{paper.title || paper.id}</span>
-                  </p>
-                ) : <p className="text-xs text-amber-600">No paper ingested — go to the Ingest tab first.</p>}
-              </div>
-              <div className="flex items-center gap-3">
-                <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground" title="Also ask a local vision model whether each figure looks manipulated or AI-generated (slower).">
-                  <input type="checkbox" checked={useVlm} onChange={(e) => setUseVlm(e.target.checked)} className="size-3.5" />
-                  Vision-model check
-                </label>
-                {running ? (
-                  <Button size="sm" variant="outline" onClick={() => abortRef.current?.abort()}><X className="mr-1.5 size-4" />Cancel</Button>
-                ) : (
-                  <Button size="sm" onClick={run} disabled={!paper}><Play className="mr-1.5 size-4" />Analyze figures</Button>
-                )}
-              </div>
-            </div>
-            {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
-            {note && <p className="mt-2 text-xs text-muted-foreground">{note}</p>}
-            {running && <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />Extracting figures and comparing… this can take a minute.</p>}
-          </div>
-        </div>
-      </Card>
-
-      {summary && (
-        <>
-          <Card className="p-3">
-            <div className="flex flex-wrap items-center gap-4">
+      <Card className="p-3">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          {running ? (
+            <Button size="sm" variant="outline" onClick={() => abortRef.current?.abort()} className="shrink-0"><X className="mr-1.5 size-4" />Cancel</Button>
+          ) : (
+            <Button size="sm" onClick={run} disabled={!paper} className="shrink-0"><Play className="mr-1.5 size-4" />{summary ? "Re-analyze" : "Analyze figures"}</Button>
+          )}
+          <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground" title="Also ask a local vision model whether each figure looks manipulated or AI-generated (slower).">
+            <input type="checkbox" checked={useVlm} onChange={(e) => setUseVlm(e.target.checked)} className="size-3.5" />
+            Vision-model check
+          </label>
+          {summary && (
+            <>
               <Stat label="Figures analyzed" value={analyzed} />
               <Stat label="Suspicious findings" value={findings.length} tone={findings.length ? "red" : "green"} />
               <Stat label="Cross-paper matches" value={crossPaper} tone={crossPaper ? "red" : undefined} />
               {(["high", "moderate", "low"] as Sev[]).map((k) => sevCounts[k] ? (
                 <Badge key={k} variant="outline" className={SEV_STYLE[k] + " capitalize"}>{sevCounts[k]} {k}</Badge>
               ) : null)}
-            </div>
-          </Card>
+            </>
+          )}
+        </div>
+        {!paper && <p className="mt-2 text-xs text-amber-600">No paper ingested — go to the Ingest tab first.</p>}
+        {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+        {note && <p className="mt-2 text-xs text-muted-foreground">{note}</p>}
+        {running && <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />Extracting figures and comparing… this can take a minute.</p>}
+      </Card>
 
+      {summary && (
+        <>
           {findings.length > 0 ? (
             <div className="space-y-3">
               {findings.map((f) => {
