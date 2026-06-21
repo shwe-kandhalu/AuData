@@ -6,13 +6,14 @@ import { AuthProvider } from "./lib/auth";
 import { UserMenu } from "./components/UserMenu";
 import {
   NumericalPage,
-  ImagingPage, ReliabilityPage, ReviewPage, ReportPage,
+  ReliabilityPage, ReviewPage, ReportPage,
 } from "./pages/AuditPlaceholders";
 import { DashboardPage } from "./pages/DashboardPage";
 import { AuditsPage } from "./pages/AuditsPage";
 import { IngestPage } from "./pages/IngestPage";
 import { ReferenceIntegrityPage } from "./pages/ReferenceIntegrityPage";
 import { MethodsClaimsPage } from "./pages/MethodsClaimsPage";
+import { ImageForensicsPage } from "./pages/ImageForensicsPage";
 import { IngestService, AuditStore } from "./lib/apiClient";
 import { RecomputePage } from "./pages/RecomputePage";
 import { LayoutDashboard, Upload, Calculator, Hash, Image as ImageIcon, GitCompare, BookMarked, Gauge, ShieldCheck, FileText, Users } from "lucide-react";
@@ -105,7 +106,7 @@ function Shell() {
           {s.page === "ingest" && <IngestPage />}
           {s.page === "recompute" && <RecomputePage />}
           {s.page === "numerical" && <NumericalPage />}
-          {s.page === "imaging" && <ImagingPage />}
+          {s.page === "imaging" && <ImageForensicsPage />}
           {s.page === "methods" && <MethodsClaimsPage />}
           {s.page === "references" && <ReferenceIntegrityPage />}
           {s.page === "reliability" && <ReliabilityPage />}
