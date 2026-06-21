@@ -33,6 +33,7 @@ from pydantic import BaseModel
 from . import settings, ingest, browserbase_fetch, storage, fulltext, llm
 from . import reference_integrity as refint
 from . import methods_claims as mc
+from . import imageforensicsagents as imgforensics
 
 app = FastAPI(title="AuData API", version="0.1.0")
 
