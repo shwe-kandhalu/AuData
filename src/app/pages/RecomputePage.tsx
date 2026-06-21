@@ -1,6 +1,5 @@
 import { Fragment, useState } from "react";
 import { AlertCircle, Calculator, CheckCircle2, FileInput, Play, XCircle } from "lucide-react";
-import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { useStore } from "../lib/store";
@@ -112,17 +111,15 @@ export function RecomputePage() {
           <div className="flex min-w-0 flex-1 items-start gap-3">
             <div className="shrink-0 rounded-md bg-primary/10 p-3"><Calculator className="size-5 text-primary" /></div>
             <div className="min-w-0 flex-1">
-              <h2 className="line-clamp-2 break-words text-base font-semibold">{paper.title || "Paper under audit"}</h2>
-              <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                <Badge variant="outline">{paper.num_pages ?? "?"} pages</Badge>
-                <Badge variant="outline">{paper.char_count.toLocaleString()} chars</Badge>
-                <Badge variant="outline">{paper.full_text_source || paper.source}</Badge>
-              </div>
+              <h2 className="text-base font-semibold">Statistical Recompute</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Recompute reported t, F, chi-square, and r statistics against their p-values.
+              </p>
             </div>
           </div>
           <Button onClick={runAudit} disabled={busy || !paper.full_text} className="shrink-0 gap-2 md:self-start">
             <Play className="size-4" />
-            {busy ? "Running" : "Run"}
+            {busy ? "Running" : "Run check"}
           </Button>
         </div>
       </Card>
