@@ -366,8 +366,12 @@ function Detail({ r, decision, onDecide, canLocate, onLocate }: {
         </div>
         <div className="flex gap-1.5 shrink-0">
           {canLocate && <Button variant="outline" size="sm" onClick={onLocate} title="Highlight in the PDF"><FileSearch className="size-3.5 mr-1" />Locate in PDF</Button>}
-          <Button variant={decision === "accept" ? "default" : "outline"} size="sm" onClick={() => onDecide("accept")}><Check className="size-3.5 mr-1" />Accept</Button>
-          <Button variant={decision === "dismiss" ? "secondary" : "outline"} size="sm" onClick={() => onDecide("dismiss")}><X className="size-3.5 mr-1" />Dismiss</Button>
+          <Button variant="outline" size="sm" onClick={() => onDecide("accept")}
+            className={decision === "accept" ? "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600" : "border-emerald-500/50 text-emerald-700 hover:bg-emerald-500/10 hover:text-emerald-700"}>
+            <Check className="size-3.5 mr-1" />Accept</Button>
+          <Button variant="outline" size="sm" onClick={() => onDecide("dismiss")}
+            className={decision === "dismiss" ? "bg-red-600 hover:bg-red-700 text-white border-red-600" : "border-red-500/50 text-red-600 hover:bg-red-500/10 hover:text-red-600"}>
+            <X className="size-3.5 mr-1" />Dismiss</Button>
         </div>
       </div>
 
