@@ -1290,7 +1290,11 @@ export type MetaAnalysisResult = {
 
 // ── Numerical consistency (unified, server-side) ─────────────────────────────
 
-export type NumericalFlag = { type: string; severity: RefSeverity; description: string; excerpt: string };
+export type NumericalValue = { label: string; value: string; source: string };
+export type NumericalFlag = {
+  type: string; severity: RefSeverity; description: string; excerpt: string;
+  values?: NumericalValue[]; calculation?: string; reported?: string; computed?: string;
+};
 export type NumericalResult = {
   flags: NumericalFlag[];
   summaries: Record<string, string>;

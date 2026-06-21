@@ -229,12 +229,37 @@ export function NumericalPage() {
                             </div>
                           </div>
                           <p className="mt-2 text-sm">{f.description}</p>
-                          {f.excerpt && (
+                          {/* the numbers, and exactly where each came from */}
+                          {((f.values && f.values.length > 0) || f.excerpt) && (
                             <div className="mt-2 rounded-md border border-l-2 border-l-primary/50 bg-muted/40 p-2">
                               <div className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                                 <FileSearch className="size-3" />Pulled from the paper
                               </div>
-                              <p className="mt-0.5 text-xs italic text-foreground">“{f.excerpt}”</p>
+                              {f.values && f.values.length > 0 && (
+                                <ul className="mt-1 space-y-0.5 text-xs">
+                                  {f.values.map((v, k) => (
+                                    <li key={k} className="flex flex-wrap items-baseline gap-x-1.5">
+                                      <span className="text-muted-foreground">{v.label}:</span>
+                                      <span className="font-mono font-medium text-foreground">{v.value}</span>
+                                      {v.source && <span className="text-muted-foreground">· {v.source}</span>}
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                              {f.excerpt && <p className="mt-1 text-xs italic text-muted-foreground">“{f.excerpt}”</p>}
+                            </div>
+                          )}
+                          {/* the arithmetic that exposes the inconsistency */}
+                          {(f.calculation || f.reported || f.computed) && (
+                            <div className="mt-2 rounded-md border border-l-2 border-l-amber-500/60 bg-amber-500/5 p-2">
+                              <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Calculation</div>
+                              {f.calculation && <code className="mt-0.5 block whitespace-pre-wrap font-mono text-xs text-foreground">{f.calculation}</code>}
+                              {(f.reported || f.computed) && (
+                                <div className="mt-1 flex flex-wrap gap-3 text-xs">
+                                  {f.reported && <span className="text-muted-foreground">Reported: <span className="font-mono font-medium text-red-600">{f.reported}</span></span>}
+                                  {f.computed && <span className="text-muted-foreground">Should be: <span className="font-mono font-medium text-emerald-600">{f.computed}</span></span>}
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>

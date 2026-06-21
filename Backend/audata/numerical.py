@@ -37,14 +37,25 @@ Categories:
 - abstract_results: do numbers in the abstract match the results section?
 - qualitative_quantifier: does a word like "majority/most/nearly all/few/minority" agree with the actual percentage in the paper?
 
+For every flag, show your work: list each number you used and exactly where in the paper it came from, and write the explicit arithmetic that exposes the inconsistency.
+
 Return ONLY valid JSON:
 {
   "summaries": { "n_sum_error": "...", "percentage_mismatch": "...", "table_text_discrepancy": "...", "implausible_value": "...", "abstract_results": "...", "qualitative_quantifier": "..." },
   "flags": [
-    {"type": "<one of the six category keys>", "severity": "high"|"medium"|"low", "description": "name BOTH conflicting values explicitly", "excerpt": "verbatim quote <= 160 chars"}
+    {
+      "type": "<one of the six category keys>",
+      "severity": "high"|"medium"|"low",
+      "description": "name BOTH conflicting values explicitly",
+      "values": [ {"label": "what this number is", "value": "the number", "source": "where it appears, e.g. 'Table 2, Intervention arm' / 'Abstract' / 'Results, para 3'"} ],
+      "calculation": "the explicit arithmetic that reveals the problem, e.g. '12 + 18 + 27 = 57, but the paper reports 60'",
+      "reported": "the value the paper states",
+      "computed": "the value that is actually correct",
+      "excerpt": "verbatim quote <= 160 chars"
+    }
   ]
 }
-If a category has nothing to check, say so in its summary. flags may be empty.
+Include values (with their source) and calculation for EVERY flag. If a category has nothing to check, say so in its summary. flags may be empty.
 
 PAPER:
 <paper>
@@ -73,11 +84,23 @@ def analyze(paper: Dict[str, Any], model) -> Dict[str, Any]:
             sev = str(f.get("severity", "medium")).strip().lower()
             if sev not in ("high", "medium", "low"):
                 sev = "medium"
+            values = []
+            for v in (f.get("values") or []):
+                if isinstance(v, dict):
+                    values.append({
+                        "label": str(v.get("label", "")).strip(),
+                        "value": str(v.get("value", "")).strip(),
+                        "source": str(v.get("source", "")).strip(),
+                    })
             flags.append({
                 "type": t if t in _VALID_TYPES else "other",
                 "severity": sev,
                 "description": str(f.get("description", "")).strip(),
                 "excerpt": str(f.get("excerpt", "")).strip(),
+                "values": values,
+                "calculation": str(f.get("calculation", "")).strip(),
+                "reported": str(f.get("reported", "")).strip(),
+                "computed": str(f.get("computed", "")).strip(),
             })
         s = data.get("summaries")
         if isinstance(s, dict):
