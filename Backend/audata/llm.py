@@ -67,13 +67,15 @@ def get_model(model_name: Optional[str] = None):
     low = name.lower()
     is_cloud = ("claude" in low) or ("gpt" in low) or low.startswith(("o1", "o3", "o4")) or ("gemini" in low)
     try:
-        # Token Router (PaleBlueDot): when configured, route ALL cloud model calls
-        # through its OpenAI-compatible gateway instead of the provider directly.
+        # Token Router (PaleBlueDot): when BOTH the key and an explicit base URL
+        # are set, route cloud model calls through its OpenAI-compatible gateway.
+        # Require the base URL explicitly so a stray key can't silently break the
+        # provider path by pointing at the wrong endpoint.
         tr_key = os.getenv("TOKENROUTER_API_KEY")
-        if tr_key and is_cloud:
+        tr_base = os.getenv("TOKENROUTER_BASE_URL")
+        if tr_key and tr_base and is_cloud:
             from langchain_openai import ChatOpenAI
-            return ChatOpenAI(model=name, api_key=tr_key,
-                              base_url=os.getenv("TOKENROUTER_BASE_URL", "https://api.tokenrouter.io/v1"),
+            return ChatOpenAI(model=name, api_key=tr_key, base_url=tr_base,
                               temperature=0, max_tokens=4096)
         if "claude" in low:
             key = os.getenv("ANTHROPIC_API_KEY")
