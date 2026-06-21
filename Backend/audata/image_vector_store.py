@@ -224,17 +224,37 @@ def search_similar_panels(
         2,
     )
 
+    # Normalize FT.SEARCH reply to a list of field dicts. redis-py 8 (RESP3)
+    # returns a dict {"results": [{"extra_attributes": {...}}, ...]}; older RESP2
+    # returns a flat list [total, key, [f,v,...], key, [f,v,...], ...].
+    def _dec(x):
+        return x.decode() if isinstance(x, (bytes, bytearray)) else x
+
+    def _dget(d, *keys):
+        for k in keys:
+            if k in d:
+                return d[k]
+            kb = k.encode() if isinstance(k, str) else k
+            if kb in d:
+                return d[kb]
+        return None
+
+    rows: List[Dict[str, Any]] = []
+    if isinstance(result, dict):
+        for d in (_dget(result, "results", "Results") or []):
+            attrs = _dget(d, "extra_attributes", "attributes", "fields") or {}
+            if isinstance(attrs, list):
+                attrs = {_dec(attrs[j]): _dec(attrs[j + 1]) for j in range(0, len(attrs) - 1, 2)}
+            else:
+                attrs = {_dec(k): _dec(v) for k, v in attrs.items()}
+            rows.append(attrs)
+    elif isinstance(result, (list, tuple)):
+        for i in range(2, len(result), 2):
+            fields = result[i]
+            rows.append({_dec(fields[j]): _dec(fields[j + 1]) for j in range(0, len(fields) - 1, 2)})
+
     matches = []
-
-    for i in range(2, len(result), 2):
-        fields = result[i]
-        data = {}
-
-        for j in range(0, len(fields), 2):
-            key = fields[j].decode() if isinstance(fields[j], bytes) else fields[j]
-            val = fields[j + 1]
-            data[key] = val.decode() if isinstance(val, bytes) else val
-
+    for data in rows:
         matched_paper_id = data.get("paper_id")
 
         if matched_paper_id == paper_id:

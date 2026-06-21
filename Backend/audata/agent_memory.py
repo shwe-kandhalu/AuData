@@ -31,17 +31,13 @@ def _get():
         from agent_memory_client import MemoryAPIClient, MemoryClientConfig
         cfg = MemoryClientConfig(base_url=base, default_namespace=os.getenv("AGENT_MEMORY_NAMESPACE", "audata"))
         _client = MemoryAPIClient(config=cfg)
-        # Best-effort: attach the managed-service key as a bearer header if the
-        # underlying http client exposes one.
+        # The Redis managed Agent Memory gateway authenticates via X-Redis-Api-Key.
         key = os.getenv("REDIS_AGENT_MEMORY_API_KEY") or os.getenv("AGENT_MEMORY_API_KEY")
-        if key:
-            for attr in ("_client", "client", "_http", "session"):
-                hc = getattr(_client, attr, None)
-                if hc is not None and hasattr(hc, "headers"):
-                    try:
-                        hc.headers["Authorization"] = f"Bearer {key}"
-                    except Exception:
-                        pass
+        if key and getattr(_client, "_client", None) is not None:
+            try:
+                _client._client.headers["X-Redis-Api-Key"] = key
+            except Exception as e:
+                print(f"[audata.agent_memory] header inject failed: {e}")
         print("[audata.agent_memory] enabled.")
     except Exception as e:
         print(f"[audata.agent_memory] init failed: {e}")
@@ -53,14 +49,14 @@ def available() -> bool:
     return _get() is not None
 
 
-def _run(coro):
+def _run(make_coro):
+    """Run an async call. `make_coro` is a 0-arg callable returning a fresh coroutine."""
     try:
-        return asyncio.run(coro)
+        return asyncio.run(make_coro())
     except RuntimeError:
-        # already in an event loop (rare here): use a fresh loop
         loop = asyncio.new_event_loop()
         try:
-            return loop.run_until_complete(coro)
+            return loop.run_until_complete(make_coro())
         finally:
             loop.close()
 
@@ -74,7 +70,7 @@ def record(text: str, topics: List[str] | None = None, namespace: str | None = N
         from agent_memory_client.models import ClientMemoryRecord
         rec = ClientMemoryRecord(text=text, topics=topics or [],
                                  namespace=namespace or os.getenv("AGENT_MEMORY_NAMESPACE", "audata"))
-        _run(c.create_long_term_memory([rec]))
+        _run(lambda: c.create_long_term_memory([rec]))
         return True
     except Exception as e:
         print(f"[audata.agent_memory] record failed: {e}")
@@ -87,8 +83,8 @@ def search(query: str, limit: int = 5) -> List[Dict[str, Any]]:
     if not c or not query:
         return []
     try:
-        res = _run(c.search_long_term_memory(text=query, limit=limit))
-        mems = getattr(res, "memories", None) or getattr(res, "data", None) or []
+        res = _run(lambda: c.search_long_term_memory(text=query))
+        mems = (getattr(res, "memories", None) or getattr(res, "data", None) or [])[:limit]
         out = []
         for m in mems:
             out.append({"text": getattr(m, "text", None) or (m.get("text") if isinstance(m, dict) else ""),
