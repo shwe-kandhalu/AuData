@@ -105,27 +105,35 @@ export function ReferenceIntegrityPage() {
   // Persistence: each paper's audit is stored keyed by id, so it survives tab
   // switches and refresh (the store autosaves to localStorage + the session).
   const auditKey = paper?.id || "__manual__";
+  // Reset the view only when the paper under audit changes (and has no saved
+  // results yet) — never on a transient store change, so results don't vanish.
+  useEffect(() => {
+    if (s.refAudits[auditKey]) return;
+    setResults([]); setSummary(null); setMetrics(null); setDecisions({}); setSelected(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auditKey]);
+
+  // Apply saved results from the store (reactive to Dashboard "Run all"); pull
+  // from the server once if they are not in the store yet.
   useEffect(() => {
     let cancelled = false;
-    const apply = (a: any) => {
-      if (cancelled) return;
-      if (a) {
-        setResults(a.results || []); setSummary(a.summary || null); setMetrics(a.metrics || null);
-        setDecisions(a.decisions || {});
-        setSelected((a.results || []).find((x: RefResult) => x.status === "flagged")?.index ?? (a.results || [])[0]?.index ?? null);
-      } else { setResults([]); setSummary(null); setMetrics(null); setDecisions({}); setSelected(null); }
-    };
     const local = s.refAudits[auditKey];
-    if (local) { apply(local); }
-    else if (paper) {
-      apply(null);
-      // Not in the local store — pull this paper's saved results from the server (Redis).
+    if (local) {
+      setResults(local.results || []);
+      setSummary(local.summary || null);
+      setMetrics(local.metrics || null);
+      setDecisions(local.decisions || {});
+      setSelected((cur) => {
+        const list: RefResult[] = local.results || [];
+        if (cur != null && list.some((x) => x.index === cur)) return cur;
+        return list.find((x) => x.status === "flagged")?.index ?? list[0]?.index ?? null;
+      });
+    } else if (paper) {
       AuditStore.getAll(paper.id).then((audits) => {
         if (cancelled || !audits.references) return;
         s.setRefAudits({ ...s.refAudits, [auditKey]: audits.references });
-        apply(audits.references);
       });
-    } else { apply(null); }
+    }
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auditKey, s.refAudits[auditKey]?.results]);

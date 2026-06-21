@@ -83,26 +83,33 @@ export function RecomputePage() {
   const [view, setView] = useState<"stats" | "meta">("stats");
   const auditKey = paper?.id || "__none__";
 
-  // Hydrate from the shared store (reactive), so results persist across tab
-  // switches, survive a refresh, and appear immediately after a Dashboard
-  // "Run all" without re-running. Falls back to the server on first load.
+  // Reset only when the paper changes (and has no saved result) — never on a
+  // transient store change, so results don't vanish.
+  useEffect(() => {
+    if (store.statcheckAudits?.[auditKey]) return;
+    setResult(null); setSelected(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auditKey]);
+
+  // Apply the saved recompute from the store (reactive to Dashboard "Run all"),
+  // surviving tab switches and refresh; pull from the server once if absent.
   useEffect(() => {
     let cancelled = false;
-    const apply = (r: StatisticalRecomputeResult | null) => {
-      if (cancelled) return;
-      setResult(r);
-      if (r?.findings?.length) {
-        const fm = r.findings.findIndex((f) => f.status === "mismatch");
-        setSelected(fm >= 0 ? fm : 0);
-      } else setSelected(null);
-    };
     const local = store.statcheckAudits?.[auditKey] as StatisticalRecomputeResult | undefined;
-    if (local) { apply(local); return () => { cancelled = true; }; }
-    apply(null);
-    if (paper) AuditStore.getAll(paper.id).then((a) => {
-      if (cancelled || !a.statcheck) return;
-      store.setStatcheckAudits({ ...store.statcheckAudits, [auditKey]: a.statcheck });
-    });
+    if (local) {
+      setResult(local);
+      setSelected((cur) => {
+        const n = local.findings?.length || 0;
+        if (cur != null && cur < n) return cur;
+        const fm = local.findings?.findIndex((f) => f.status === "mismatch") ?? -1;
+        return n ? (fm >= 0 ? fm : 0) : null;
+      });
+    } else if (paper) {
+      AuditStore.getAll(paper.id).then((a) => {
+        if (cancelled || !a.statcheck) return;
+        store.setStatcheckAudits({ ...store.statcheckAudits, [auditKey]: a.statcheck });
+      });
+    }
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auditKey, store.statcheckAudits?.[auditKey]]);
@@ -331,18 +338,23 @@ function MetaAnalysisSection() {
   const [result, setResult] = useState<MetaAnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Reset only when the paper changes (and has no saved result).
+  useEffect(() => {
+    if (s.metaAudits[auditKey]) return;
+    setResult(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auditKey]);
+
+  // Apply saved meta result from the store (reactive to Dashboard "Run all");
+  // pull from the server once if absent. Never clobbers on a transient change.
   useEffect(() => {
     let cancelled = false;
     const local = s.metaAudits[auditKey];
     if (local) setResult(local);
-    else {
-      setResult(null);
-      if (paper) AuditStore.getAll(paper.id).then((au) => {
-        if (cancelled || !au.meta) return;
-        s.setMetaAudits({ ...s.metaAudits, [auditKey]: au.meta });
-        setResult(au.meta);
-      });
-    }
+    else if (paper) AuditStore.getAll(paper.id).then((au) => {
+      if (cancelled || !au.meta) return;
+      s.setMetaAudits({ ...s.metaAudits, [auditKey]: au.meta });
+    });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auditKey, s.metaAudits[auditKey]]);

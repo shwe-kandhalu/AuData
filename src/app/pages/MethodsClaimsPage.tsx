@@ -79,25 +79,34 @@ export function MethodsClaimsPage() {
   const abortRef = useRef<AbortController | null>(null);
 
   const auditKey = paper?.id || "__none__";
+  // Reset the view only when the paper under audit changes (and has no saved
+  // results yet) — never on a transient store change, so results don't vanish.
+  useEffect(() => {
+    if (s.methodsAudits[auditKey]) return;
+    setResults([]); setSummary(null); setDecisions({}); setSelected(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auditKey]);
+
+  // Apply saved results from the store (reactive to Dashboard "Run all"); pull
+  // from the server once if they are not in the store yet.
   useEffect(() => {
     let cancelled = false;
-    const apply = (a: any) => {
-      if (cancelled) return;
-      if (a) {
-        setResults(a.results || []); setSummary(a.summary || null); setDecisions(a.decisions || {});
-        setSelected((a.results || []).find((x: ClaimResult) => x.status === "flagged")?.index ?? (a.results || [])[0]?.index ?? null);
-      } else { setResults([]); setSummary(null); setDecisions({}); setSelected(null); }
-    };
     const local = s.methodsAudits[auditKey];
-    if (local) { apply(local); }
-    else if (paper) {
-      apply(null);
+    if (local) {
+      setResults(local.results || []);
+      setSummary(local.summary || null);
+      setDecisions(local.decisions || {});
+      setSelected((cur) => {
+        const list: ClaimResult[] = local.results || [];
+        if (cur != null && list.some((x) => x.index === cur)) return cur;
+        return list.find((x) => x.status === "flagged")?.index ?? list[0]?.index ?? null;
+      });
+    } else if (paper) {
       AuditStore.getAll(paper.id).then((audits) => {
         if (cancelled || !audits.methods) return;
         s.setMethodsAudits({ ...s.methodsAudits, [auditKey]: audits.methods });
-        apply(audits.methods);
       });
-    } else { apply(null); }
+    }
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auditKey, s.methodsAudits[auditKey]?.results]);

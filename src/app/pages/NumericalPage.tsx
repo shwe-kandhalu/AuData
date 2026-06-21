@@ -68,23 +68,26 @@ export function NumericalPage() {
   const [dataset, setDataset] = useState<any>(null);
   const [datasetErr, setDatasetErr] = useState<string | null>(null);
 
+  // Reset only when the paper changes (and has no saved results) — never on a
+  // transient store change, so results don't vanish.
+  useEffect(() => {
+    if (s.numericalAudits[auditKey]) return;
+    setResult(null); setDecisions({}); setDataset(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auditKey]);
+
+  // Apply saved results from the store (reactive to Dashboard "Run all"); pull
+  // from the server once if they are not in the store yet.
   useEffect(() => {
     let cancelled = false;
-    const apply = (a: any) => {
-      if (cancelled) return;
-      if (a) { setResult(a.result || a); setDecisions(a.decisions || {}); setDataset(a.dataset || null); }
-      else { setResult(null); setDecisions({}); setDataset(null); }
-    };
     const local = s.numericalAudits[auditKey];
-    if (local) apply(local);
+    if (local) { setResult(local.result || local); setDecisions(local.decisions || {}); setDataset(local.dataset || null); }
     else if (paper) {
-      apply(null);
       AuditStore.getAll(paper.id).then((au) => {
         if (cancelled || !au.numerical) return;
         s.setNumericalAudits({ ...s.numericalAudits, [auditKey]: { result: au.numerical } });
-        apply({ result: au.numerical });
       });
-    } else apply(null);
+    }
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auditKey, s.numericalAudits[auditKey]]);

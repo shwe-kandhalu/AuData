@@ -48,23 +48,26 @@ export function ImageForensicsPage() {
   const abortRef = useRef<AbortController | null>(null);
 
   const auditKey = paper?.id || "__none__";
+  // Reset only when the paper changes (and has no saved results) — never on a
+  // transient store change, so results don't vanish.
+  useEffect(() => {
+    if (s.imageAudits?.[auditKey]) return;
+    setSummary(null); setReport(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auditKey]);
+
+  // Apply saved results from the store (reactive to Dashboard "Run all"); pull
+  // from the server once if they are not in the store yet.
   useEffect(() => {
     let cancelled = false;
-    const apply = (a: any) => {
-      if (cancelled) return;
-      setSummary(a?.summary || null);
-      setReport(a?.report || null);
-    };
     const local = s.imageAudits?.[auditKey];
-    if (local) apply(local);
+    if (local) { setSummary(local.summary || null); setReport(local.report || null); }
     else if (paper) {
-      apply(null);
       AuditStore.getAll(paper.id).then((audits) => {
         if (cancelled || !audits.images) return;
         s.setImageAudits?.({ ...s.imageAudits, [auditKey]: audits.images });
-        apply(audits.images);
       });
-    } else apply(null);
+    }
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auditKey, s.imageAudits?.[auditKey]]);
