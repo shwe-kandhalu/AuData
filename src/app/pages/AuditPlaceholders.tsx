@@ -307,7 +307,6 @@ export function NumericalPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paper?.id]);
 
-  // ── API key (read-only, from env or localStorage) ───────────────────
   // ── 1. Internal Consistency ──────────────────────────────────────────
   const CONSISTENCY_STEPS: { label: string; desc: string; passMsg: string; type: RecFlag["type"] | null }[] = [
     { label: "Subgroup N sums",         desc: "Do the group sizes add up to the total N?",                          passMsg: "All subgroup Ns sum correctly to their reported totals.",              type: "n_sum_error" },

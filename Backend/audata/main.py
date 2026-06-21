@@ -843,28 +843,27 @@ def serve_forensics_image(filepath: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ── LLM proxy (so the frontend doesn't need a client-side API key) ────────────
+# ── LLM proxy ────────────────────────────────────────────────────────────────
 
 class LLMChatRequest(BaseModel):
     model: str = ""
     messages: List[Dict[str, str]] = []
     max_tokens: int = 4096
 
-
 @app.post("/api/llm/chat")
 def llm_chat(req: LLMChatRequest):
+    from langchain_core.messages import HumanMessage, SystemMessage
     model_name = req.model or llm.default_model()
     m = llm.get_model(model_name)
     if m is None:
-        raise HTTPException(status_code=503, detail=f"Model '{model_name}' is not available — check your API key in Backend/.env.")
+        raise HTTPException(status_code=503, detail=f"Model '{model_name}' unavailable — check ANTHROPIC_API_KEY in Backend/.env")
+    lc_msgs = []
+    for msg in req.messages:
+        if msg.get("role") == "system":
+            lc_msgs.append(SystemMessage(content=msg["content"]))
+        elif msg.get("role") == "user":
+            lc_msgs.append(HumanMessage(content=msg["content"]))
     try:
-        from langchain_core.messages import HumanMessage, SystemMessage
-        lc_msgs = []
-        for msg in req.messages:
-            if msg.get("role") == "system":
-                lc_msgs.append(SystemMessage(content=msg["content"]))
-            elif msg.get("role") == "user":
-                lc_msgs.append(HumanMessage(content=msg["content"]))
         r = m.invoke(lc_msgs)
         text = getattr(r, "content", "") or ""
     except Exception as e:
