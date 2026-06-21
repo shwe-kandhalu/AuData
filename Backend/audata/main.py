@@ -27,7 +27,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from . import settings, ingest, browserbase_fetch, storage, fulltext, llm
+from . import settings, ingest, browserbase_fetch, storage, fulltext, llm, dataset_audit
 from . import reference_integrity as refint
 from . import methods_claims as mc
 
@@ -299,6 +299,21 @@ def ingest_pdf_file(id: str):
         raise HTTPException(status_code=404, detail="No PDF stored for this paper.")
     return Response(content=data, media_type="application/pdf",
                     headers={"Content-Disposition": 'inline; filename="paper.pdf"'})
+
+
+# ── dataset audit ────────────────────────────────────────────────────────────
+
+class DatasetAuditRequest(BaseModel):
+    full_text: str
+    doi: Optional[str] = ""
+    title: Optional[str] = ""
+
+
+@app.post("/api/audit/dataset")
+def audit_dataset_endpoint(req: DatasetAuditRequest):
+    if not req.full_text.strip():
+        raise HTTPException(status_code=400, detail="full_text is required.")
+    return dataset_audit.audit_dataset(req.full_text)
 
 
 # ── storage access ────────────────────────────────────────────────────────────
