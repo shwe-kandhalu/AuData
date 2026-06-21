@@ -825,9 +825,60 @@ def prepare_paper_figures(paper: Dict[str, Any]) -> List[Dict[str, Any]]:
             os.remove(temp_pdf_path)
 
 
-def run_single_figure_forensics(target_figures: List[Dict[str, Any]], output_root: str) -> List[Dict[str, Any]]:
+_VLM_PROMPT = (
+    "You are a scientific-image-integrity reviewer. Examine this figure from a research paper. "
+    "Look for signs of digital manipulation (splicing, cloning, erased regions, inconsistent "
+    "backgrounds in blots/micrographs) or AI generation (implausible textures, fabricated detail). "
+    "Most figures are clean charts or normal photos. Respond ONLY with JSON: "
+    '{"verdict": "clean" | "manipulation_suspected" | "ai_generated", '
+    '"confidence": 0.0-1.0, "reason": "one sentence"}.'
+)
+
+
+def vlm_assess(image_path: str, model_name: str = "", timeout: float = 60.0) -> Optional[Dict[str, Any]]:
+    """Best-effort multimodal judgement (Qwen-VL / MedGemma via Ollama) of whether a
+    figure looks manipulated or AI-generated. Returns None if no vision model responds,
+    so it never breaks the deterministic checks."""
+    name = model_name or os.getenv("MODEL_VISION") or "qwen2.5vl:7b"
+    try:
+        import base64
+        import requests
+        with open(image_path, "rb") as fh:
+            b64 = base64.b64encode(fh.read()).decode("ascii")
+        base = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
+        resp = requests.post(
+            f"{base}/api/chat",
+            json={"model": name, "stream": False, "options": {"temperature": 0},
+                  "messages": [{"role": "user", "content": _VLM_PROMPT, "images": [b64]}]},
+            timeout=timeout,
+        )
+        if resp.status_code != 200:
+            return None
+        content = (resp.json().get("message") or {}).get("content", "")
+        m = re.search(r"\{.*\}", content, re.S)
+        if not m:
+            return None
+        data = json.loads(m.group(0))
+        if not isinstance(data, dict) or "verdict" not in data:
+            return None
+        v = str(data.get("verdict", "clean")).strip().lower()
+        if v not in ("clean", "manipulation_suspected", "ai_generated"):
+            v = "clean"
+        try:
+            conf = float(data.get("confidence", 0.0))
+        except (TypeError, ValueError):
+            conf = 0.0
+        return {"verdict": v, "confidence": round(conf, 2), "reason": str(data.get("reason", "")).strip()}
+    except Exception as e:
+        print(f"[imgforensics.vlm] {e}")
+        return None
+
+
+def run_single_figure_forensics(target_figures: List[Dict[str, Any]], output_root: str,
+                                use_vlm: bool = False) -> List[Dict[str, Any]]:
     """
     Runs OpenCV copy-move detection and ELA on every figure extracted from the target paper.
+    When use_vlm is set, also runs a vision-model manipulation / AI-generation assessment.
     """
     forensic_dir = Path(output_root) / "paper_A" / "forensics"
     forensic_dir.mkdir(parents=True, exist_ok=True)
@@ -841,6 +892,7 @@ def run_single_figure_forensics(target_figures: List[Dict[str, Any]], output_roo
             copy_move = copy_move_detection(image_path, forensic_dir)
             splice_result = detect_splice_boundaries(image_path, forensic_dir)
             ai_score = ai_generated_placeholder_score(image_path)
+            vlm_result = vlm_assess(image_path) if use_vlm else None
 
             results.append({
                 "image_path": image_path,
@@ -850,6 +902,7 @@ def run_single_figure_forensics(target_figures: List[Dict[str, Any]], output_roo
                 "splice_result": splice_result,
                 "ai_generated_score": ai_score,
                 "ai_detector_note": "Heuristic placeholder only; replace with a validated detector before using as evidence.",
+                "vlm_result": vlm_result,
             })
         except Exception as e:
             results.append({
@@ -890,9 +943,17 @@ def summarize_forensics_results(results: List[Dict[str, Any]]) -> Dict[str, Any]
         if ai_score is not None and ai_score >= 0.7:
             by_flag["ai_generated_risk"] = by_flag.get("ai_generated_risk", 0) + 1
 
+        vlm = r.get("vlm_result") or {}
+        if vlm.get("verdict") in ("manipulation_suspected", "ai_generated") and (vlm.get("confidence") or 0) >= 0.5:
+            by_flag[f"vlm_{vlm['verdict']}"] = by_flag.get(f"vlm_{vlm['verdict']}", 0) + 1
+
+    def _vlm_flagged(r):
+        v = r.get("vlm_result") or {}
+        return v.get("verdict") in ("manipulation_suspected", "ai_generated") and (v.get("confidence") or 0) >= 0.5
+
     return {
         "total_images": len(results),
-        "flagged": sum(1 for r in results if r.get("status") == "error" or
+        "flagged": sum(1 for r in results if r.get("status") == "error" or _vlm_flagged(r) or
                        any(r.get(k, {}).get("severity") in ("high", "moderate")
                            for k in ("copy_move_result", "splice_result"))),
         "by_severity": by_severity,
@@ -905,6 +966,7 @@ def run_image_integrity_agent_from_papers(
     candidate_papers: List[Dict[str, Any]],
     output_root: str = "image_integrity_output",
     similarity_threshold: int = 8,
+    use_vlm: bool = False,
 ) -> Dict[str, Any]:
     """
     Full Image Auditor MVP integrated with ingest workflow.
@@ -990,7 +1052,7 @@ def run_image_integrity_agent_from_papers(
     )
 
     print("Running Paper A image-forensics checks...")
-    figure_forensics = run_single_figure_forensics(target_figures, output_root)
+    figure_forensics = run_single_figure_forensics(target_figures, output_root, use_vlm=use_vlm)
 
     report = {
         "agent": "image_integrity_agent_from_papers",

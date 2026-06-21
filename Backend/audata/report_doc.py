@@ -78,6 +78,10 @@ def _norm(key: str, d: Any) -> Dict[str, Any]:
             ai = r.get("ai_generated_score")
             if isinstance(ai, (int, float)) and ai >= 0.7:
                 items.append({"title": f"Possibly AI-generated ({fig})", "severity": "medium", "detail": f"heuristic score {ai:.2f}"})
+            vlm = r.get("vlm_result") or {}
+            if vlm.get("verdict") and vlm["verdict"] != "clean" and (vlm.get("confidence") or 0) >= 0.5:
+                label = "possibly AI-generated" if vlm["verdict"] == "ai_generated" else "manipulation suspected"
+                items.append({"title": f"Vision model: {label} ({fig})", "severity": "medium", "detail": vlm.get("reason", "")})
         return {"ran": True, "total": summ.get("total_images", report.get("num_target_figures", 0)),
                 "flagged": summ.get("flagged", len(items)), "items": items}
     if key == "meta":

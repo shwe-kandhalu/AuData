@@ -37,6 +37,7 @@ export function ImageForensicsPage() {
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
+  const [useVlm, setUseVlm] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   const auditKey = paper?.id || "__none__";
@@ -92,7 +93,7 @@ export function ImageForensicsPage() {
     abortRef.current = ac;
     
     try {
-      const out = await ImageForensicsService.checkPaper(paper.id, { signal: ac.signal });
+      const out = await ImageForensicsService.checkPaper(paper.id, { signal: ac.signal, useVlm });
       setSummary(out.summary);
       setReport(out.report);
       if (out.note) setNote(out.note);
@@ -134,7 +135,7 @@ export function ImageForensicsPage() {
           </Badge>
         </div>
 
-        <div className="flex gap-2 mb-6">
+        <div className="flex items-center gap-3 mb-6">
           <Button
             onClick={run}
             disabled={!paper || running}
@@ -143,6 +144,10 @@ export function ImageForensicsPage() {
             <Play className="w-4 h-4" />
             {running ? "Analyzing..." : "Analyze Figures"}
           </Button>
+          <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground" title="Also ask a vision model whether each figure looks manipulated or AI-generated (slower; needs a local vision model)">
+            <input type="checkbox" checked={useVlm} onChange={(e) => setUseVlm(e.target.checked)} className="size-3.5" />
+            AI / manipulation check (VLM)
+          </label>
           {running && (
             <Button
               variant="outline"
@@ -227,10 +232,20 @@ export function ImageForensicsPage() {
                   )}
                   {fig.ai_generated_score !== undefined && (
                     <div>
-                      <div className="text-muted-foreground">AI-Generated Risk</div>
+                      <div className="text-muted-foreground">AI-Generated Risk (heuristic)</div>
                       <div className={`font-medium ${fig.ai_generated_score >= 0.7 ? 'text-red-600' : fig.ai_generated_score >= 0.5 ? 'text-amber-600' : 'text-emerald-600'}`}>
                         {(fig.ai_generated_score * 100).toFixed(1)}%
                       </div>
+                    </div>
+                  )}
+                  {fig.vlm_result && (
+                    <div>
+                      <div className="text-muted-foreground">Vision model</div>
+                      <div className={`font-medium ${fig.vlm_result.verdict === 'clean' ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {fig.vlm_result.verdict === 'ai_generated' ? 'Possibly AI-generated' : fig.vlm_result.verdict === 'manipulation_suspected' ? 'Manipulation suspected' : 'Clean'}
+                        {typeof fig.vlm_result.confidence === 'number' ? ` (${(fig.vlm_result.confidence * 100).toFixed(0)}%)` : ''}
+                      </div>
+                      {fig.vlm_result.reason && <div className="text-[11px] text-muted-foreground">{fig.vlm_result.reason}</div>}
                     </div>
                   )}
                 </div>

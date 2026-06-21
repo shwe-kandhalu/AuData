@@ -1348,12 +1348,12 @@ export type ImageForensicsReport = {
 export const ImageForensicsService = {
   async checkPaper(
     paperId: string,
-    opts: { signal?: AbortSignal; onResult?: (r: any) => void } = {},
+    opts: { signal?: AbortSignal; onResult?: (r: any) => void; useVlm?: boolean } = {},
   ): Promise<{ summary: ImageForensicsSummary | null; report: ImageForensicsReport | null; note?: string }> {
     const res = await fetch(`${apiConfig.baseUrl}/image-forensics/check-paper/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ paper_id: paperId, similarity_threshold: 8 }),
+      body: JSON.stringify({ paper_id: paperId, similarity_threshold: 8, use_vlm: !!opts.useVlm }),
       signal: opts.signal,
     });
     if (!res.ok || !res.body) throw new Error(`image-forensics stream failed (${res.status})`);

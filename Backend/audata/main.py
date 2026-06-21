@@ -801,6 +801,7 @@ class ImageForensicsRequest(BaseModel):
     paper_id: str
     candidate_paper_ids: Optional[List[str]] = None
     similarity_threshold: int = 8
+    use_vlm: bool = False
 
 
 @app.post("/api/image-forensics/check-paper/stream")
@@ -831,6 +832,7 @@ def image_forensics_check_paper_stream(req: ImageForensicsRequest):
                 candidate_papers=candidate_papers,
                 output_root=str(output_root),
                 similarity_threshold=req.similarity_threshold,
+                use_vlm=req.use_vlm,
             )
             if report.get("status") == "error":
                 event_queue.put(("error", {"message": report.get("message", "Unknown error")}))
