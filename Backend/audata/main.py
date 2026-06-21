@@ -108,8 +108,8 @@ def integrations():
                  "note": "register an agent at app.band.ai/agents; set BAND_AGENT_ID+BAND_API_KEY; run python -m audata.band_agent"},
         "langcache": {"active": langcache.available(), "installed": _mod("langcache"),
                       "note": "needs REDIS_LANGCACHE_API_KEY + LANGCACHE_SERVER_URL + LANGCACHE_CACHE_ID"},
-        "agent_memory": {"active": agent_memory.available(), "installed": _mod("agent_memory_client"),
-                         "note": "needs AGENT_MEMORY_BASE_URL"},
+        "agent_memory": {"active": agent_memory.available(), "installed": _mod("sentence_transformers"),
+                         "note": "native Redis (RediSearch KNN) long-term memory; needs REDIS_URL"},
     }
 
 
