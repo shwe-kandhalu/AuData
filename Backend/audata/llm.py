@@ -11,7 +11,13 @@ from __future__ import annotations
 import os
 import json
 import re
+import contextlib
 from typing import Any, Optional
+
+try:
+    import sentry_sdk
+except Exception:  # sentry is optional
+    sentry_sdk = None
 
 
 def default_model() -> str:
@@ -121,18 +127,33 @@ def invoke(model, prompt: str, cache: bool = True) -> str:
         # 1) semantic cache (Redis LangCache) — hits on similar prompts
         sem = langcache.search(cache_prompt)
         if sem is not None:
+            if sentry_sdk:
+                sentry_sdk.add_breadcrumb(category="llm.cache", level="info", message="langcache hit", data={"model": name})
             return sem
         # 2) exact-match cache (Redis / in-memory)
         key = hashlib.sha256(cache_prompt.encode("utf-8")).hexdigest()
         hit = storage.cache_get(key)
         if hit is not None:
+            if sentry_sdk:
+                sentry_sdk.add_breadcrumb(category="llm.cache", level="info", message="exact cache hit", data={"model": name})
             return hit
     try:
         from langchain_core.messages import HumanMessage
-        r = model.invoke([HumanMessage(content=prompt)])
-        out = getattr(r, "content", "") or ""
+        cm = sentry_sdk.start_span(op="gen_ai.chat", name=f"llm:{name or 'model'}") if sentry_sdk else contextlib.nullcontext()
+        with cm as span:
+            r = model.invoke([HumanMessage(content=prompt)])
+            out = getattr(r, "content", "") or ""
+            if span is not None:
+                try:
+                    span.set_data("gen_ai.request.model", name)
+                    span.set_data("gen_ai.request.prompt_chars", len(prompt))
+                    span.set_data("gen_ai.response.chars", len(out))
+                except Exception:
+                    pass
     except Exception as e:
         print(f"[audata.llm] invoke failed: {e}")
+        if sentry_sdk:
+            sentry_sdk.capture_exception(e)
         return ""
     if cache and out:
         try:

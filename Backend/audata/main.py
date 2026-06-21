@@ -41,17 +41,32 @@ from . import band
 from . import langcache
 from . import agent_memory
 
-# Sentry error monitoring — active only when SENTRY_DSN is set (no-op otherwise).
+# Sentry — full observability (errors + performance tracing + profiling + logs).
+# Active only when SENTRY_DSN is set (no-op otherwise). PII stays off (we audit
+# public papers, not personal data); tracing/profiling do not need it.
 import os as _os
 if _os.getenv("SENTRY_DSN"):
     try:
+        import logging as _logging
         import sentry_sdk
+        from sentry_sdk.integrations.logging import LoggingIntegration
         sentry_sdk.init(
             dsn=_os.getenv("SENTRY_DSN"),
-            traces_sample_rate=float(_os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
+            environment=_os.getenv("SENTRY_ENVIRONMENT", "demo"),
+            release=_os.getenv("SENTRY_RELEASE", "audata@0.1.0"),
+            # Performance: capture every transaction (route) and profile it.
+            traces_sample_rate=float(_os.getenv("SENTRY_TRACES_SAMPLE_RATE", "1.0")),
+            profiles_sample_rate=float(_os.getenv("SENTRY_PROFILES_SAMPLE_RATE", "1.0")),
             send_default_pii=False,
+            attach_stacktrace=True,
+            max_request_body_size="small",
+            # Breadcrumbs for all INFO logs, Sentry issues for ERROR+ logs.
+            integrations=[LoggingIntegration(level=_logging.INFO, event_level=_logging.ERROR)],
+            # Sentry Structured Logs (sentry_sdk.logger.*).
+            _experiments={"enable_logs": True},
         )
-        print("[audata] Sentry initialized.")
+        sentry_sdk.set_tag("service", "audata-backend")
+        print("[audata] Sentry initialized (tracing + profiling + logs).")
     except Exception as e:
         print(f"[audata] Sentry init failed: {e}")
 
