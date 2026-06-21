@@ -10,11 +10,6 @@ const AUDITORS = [
   { icon: ImageIcon,    label: "Image Forensics" },
 ];
 
-const STATS = [
-  { value: "5",   label: "auditors" },
-  { value: "12",  label: "check types" },
-  { value: "0",   label: "false positives tolerated" },
-];
 
 export function LandingPage({ onEnter }: { onEnter: () => void }) {
   const spotRef   = useRef<HTMLDivElement>(null);
@@ -106,19 +101,6 @@ export function LandingPage({ onEnter }: { onEnter: () => void }) {
           Catch statistical errors, numerical inconsistencies,<br />
           figure manipulation, and citation problems in biomedical papers.
         </p>
-
-        {/* Stats row */}
-        <div className="flex items-center gap-6 mb-10">
-          {STATS.map(({ value, label }, i) => (
-            <div key={label} className="flex items-center gap-6">
-              <div className="text-center">
-                <p className="text-xl font-semibold text-foreground tabular-nums">{value}</p>
-                <p className="text-[10px] text-muted-foreground uppercase tracking-widest">{label}</p>
-              </div>
-              {i < STATS.length - 1 && <div className="h-6 w-px bg-border" />}
-            </div>
-          ))}
-        </div>
 
         <Button size="lg" onClick={onEnter} className="px-10 h-12 text-[15px] gap-2">
           Start auditing <ArrowRight className="size-4 arrow-pulse" />
