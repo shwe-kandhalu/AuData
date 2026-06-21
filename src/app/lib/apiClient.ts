@@ -126,7 +126,7 @@ export type QualityOverride = {
 // Mutable global so the React store can update `model` without prop-drilling.
 export const apiConfig: { model: string; baseUrl: string } = {
   model: "llama3.1",
-  baseUrl: (import.meta as any)?.env?.VITE_API_BASE_URL || "/api",
+  baseUrl: (import.meta as any)?.env?.VITE_API_BASE_URL || "http://localhost:8000/api",
 };
 
 const AGENTS = ["Population Agent", "Intervention Agent", "Outcome Agent", "Study Design Agent"];
@@ -935,45 +935,6 @@ export type PaperUnderAudit = {
   has_pdf?: boolean;
 };
 
-export type StatisticalFinding = {
-  status: "ok" | "mismatch" | "unknown";
-  claim: string;
-  reported_p: string;
-  recomputed_p: number;
-  difference: number;
-  confidence: "High" | "Medium" | "Low" | string;
-  evidence: {
-    page: number | null;
-    section: string | null;
-    quote: string;
-    start_char: number;
-    end_char: number;
-    exact_quote: string;
-    quote_start_char: number;
-    quote_end_char: number;
-    surrounding_context: string;
-    bbox: { x0: number; y0: number; x1: number; y1: number } | null;
-    bboxes: { x0: number; y0: number; x1: number; y1: number }[];
-  };
-  math: {
-    test: string;
-    formula: string;
-    inputs: Record<string, number>;
-    substitution: string;
-    result: number;
-  };
-  note: string;
-};
-
-export type StatisticalRecomputeResult = {
-  paper_id: string;
-  title: string;
-  claim_count: number;
-  mismatch_count: number;
-  no_findings_reason?: string;
-  findings: StatisticalFinding[];
-};
-
 export type IngestCandidate = {
   title: string; doi: string; year: number | null; authors: string;
   container: string; type: string; abstract_present: boolean;
@@ -1262,21 +1223,6 @@ export const MethodsClaimsService = {
     }
     results.sort((a, b) => a.index - b.index);
     return { results, summary, note };
-  },
-};
-
-export const StatisticalAuditService = {
-  async recompute(
-    paper: PaperUnderAudit,
-    tolerance = 0.001,
-    signal?: AbortSignal,
-  ): Promise<StatisticalRecomputeResult> {
-    return postJSON("/audit/statistical-recompute", {
-      paper_id: paper.id,
-      title: paper.title,
-      full_text: paper.full_text || "",
-      tolerance,
-    }, signal);
   },
 };
 

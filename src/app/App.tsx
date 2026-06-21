@@ -5,7 +5,7 @@ import { StoreProvider, useStore } from "./lib/store";
 import { AuthProvider } from "./lib/auth";
 import { UserMenu } from "./components/UserMenu";
 import {
-  NumericalPage,
+  RecomputePage, NumericalPage,
   ReliabilityPage, ReviewPage, ReportPage,
 } from "./pages/AuditPlaceholders";
 import { DashboardPage } from "./pages/DashboardPage";
@@ -15,7 +15,6 @@ import { ReferenceIntegrityPage } from "./pages/ReferenceIntegrityPage";
 import { MethodsClaimsPage } from "./pages/MethodsClaimsPage";
 import { ImageForensicsPage } from "./pages/ImageForensicsPage";
 import { IngestService, AuditStore } from "./lib/apiClient";
-import { RecomputePage } from "./pages/RecomputePage";
 import { LayoutDashboard, Upload, Calculator, Hash, Image as ImageIcon, GitCompare, BookMarked, Gauge, ShieldCheck, FileText, Users } from "lucide-react";
 
 const PAGE_META: Record<string, { title: string; subtitle: string; icon: any }> = {
@@ -67,6 +66,7 @@ function Shell() {
       if (cancelled) return;
       if (a.references && !s.refAudits[paperId]) s.setRefAudits({ ...s.refAudits, [paperId]: a.references });
       if (a.methods && !s.methodsAudits[paperId]) s.setMethodsAudits({ ...s.methodsAudits, [paperId]: a.methods });
+      if (a.images && !s.imageAudits?.[paperId]) s.setImageAudits?.({ ...(s.imageAudits || {}), [paperId]: a.images });
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
