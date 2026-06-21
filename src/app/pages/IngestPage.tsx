@@ -79,7 +79,7 @@ export function IngestPage() {
           <TabsContent value="doi">
             <DoiTab busy={busy} onRun={async (doi) => {
               const ac = start("doi");
-              try { const r = await IngestService.fetch({ doi, useOpenAccess: false, useBrowserbase: true }, ac.signal); s.setPaperUnderAudit(r.paper); if (!r.resolved) setError("DOI did not resolve to a known record — check it."); }
+              try { const r = await IngestService.fetch({ doi, useOpenAccess: true, useBrowserbase: true }, ac.signal); s.setPaperUnderAudit(r.paper); if (!r.resolved) setError("DOI did not resolve to a known record — check it."); }
               catch (e: any) { if (e?.name !== "AbortError") setError(e?.message || "Fetch failed."); }
               finally { done(); }
             }} />
@@ -89,7 +89,7 @@ export function IngestPage() {
             <SearchTab busy={busy} setBusy={setBusy} setError={setError}
               onPick={async (c) => {
                 const ac = start("doi");
-                try { const r = await IngestService.fetch({ doi: c.doi, title: c.title, useOpenAccess: false, useBrowserbase: true }, ac.signal); s.setPaperUnderAudit(r.paper); }
+                try { const r = await IngestService.fetch({ doi: c.doi, title: c.title, useOpenAccess: true, useBrowserbase: true }, ac.signal); s.setPaperUnderAudit(r.paper); }
                 catch (e: any) { if (e?.name !== "AbortError") setError(e?.message || "Fetch failed."); }
                 finally { done(); }
               }} />
@@ -109,7 +109,9 @@ export function IngestPage() {
           <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="size-4 animate-spin" />
             {busy === "url" ? "Fetching via Browserbase (this can take ~10–20s)…"
-              : busy === "upload" ? "Parsing PDF…" : "Resolving + fetching…"}
+              : busy === "upload" ? "Parsing PDF…"
+              : busy === "search" ? "Searching…"
+              : "Resolving DOI → open-access APIs → Browserbase fallback…"}
             <button className="text-primary hover:underline ml-2" onClick={() => abortRef.current?.abort()}>cancel</button>
           </div>
         )}

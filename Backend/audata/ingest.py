@@ -137,10 +137,13 @@ def _extract_pdf_text(data: bytes) -> Dict[str, Any]:
         import fitz  # PyMuPDF
         doc = fitz.open(stream=data, filetype="pdf")
         pages = [doc[i].get_text("text") for i in range(doc.page_count)]
-        meta_title = (doc.metadata or {}).get("title") or ""
+        meta = doc.metadata or {}
+        meta_title = meta.get("title") or ""
+        # DOI sometimes embedded in PDF metadata subject/keywords fields
+        meta_doi = detect_doi(meta.get("subject") or "") or detect_doi(meta.get("keywords") or "")
         n = doc.page_count
         doc.close()
-        return {"text": "\n".join(pages), "num_pages": n, "meta_title": meta_title}
+        return {"text": "\n".join(pages), "num_pages": n, "meta_title": meta_title, "meta_doi": meta_doi}
     except Exception:
         pass
     try:
@@ -170,7 +173,9 @@ def _guess_title(full_text: str, meta_title: str, filename: str) -> str:
 def parse_pdf_bytes(data: bytes, filename: str) -> Dict[str, Any]:
     info = _extract_pdf_text(data)
     full_text = info.get("text") or ""
-    doi = detect_doi(full_text[:4000]) or detect_doi(full_text)
+    # Only look for the paper's own DOI in: PDF metadata → first 2000 chars (title page).
+    # Never scan the full text — references contain many foreign DOIs.
+    doi = (info.get("meta_doi") or "") or detect_doi(full_text[:2000])
     title = _guess_title(full_text, info.get("meta_title") or "", filename)
     return _build_paper(
         source="pdf_upload", ident=doi or filename, title=title, doi=doi,

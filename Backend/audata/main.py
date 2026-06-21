@@ -30,7 +30,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from . import settings, ingest, browserbase_fetch, storage, fulltext, llm
+from . import settings, ingest, browserbase_fetch, storage, fulltext, llm, dataset_audit
 from . import reference_integrity as refint
 from . import methods_claims as mc
 from . import imageforensicsagents as imgforensics
@@ -334,6 +334,21 @@ def ingest_pdf_file(id: str):
                     headers={"Content-Disposition": 'inline; filename="paper.pdf"'})
 
 
+# ── dataset audit ────────────────────────────────────────────────────────────
+
+class DatasetAuditRequest(BaseModel):
+    full_text: str
+    doi: Optional[str] = ""
+    title: Optional[str] = ""
+
+
+@app.post("/api/audit/dataset")
+def audit_dataset_endpoint(req: DatasetAuditRequest):
+    if not req.full_text.strip():
+        raise HTTPException(status_code=400, detail="full_text is required.")
+    return dataset_audit.audit_dataset(req.full_text)
+
+
 @app.get("/api/audit/pdf-highlight")
 def audit_pdf_highlight(id: str, page: int, boxes: str = "[]"):
     """Serve the full stored PDF with highlight annotations for one finding."""
@@ -361,12 +376,7 @@ def audit_pdf_highlight(id: str, page: int, boxes: str = "[]"):
             annot.set_colors(stroke=(1, 0.86, 0.05))
             annot.update(opacity=0.45)
         if first_rect is not None:
-            # Ask PDF viewers to open near the first highlighted word. Browser
-            # URL fragments often honor only #page, but /OpenAction is embedded
-            # in the returned PDF itself.
             left = max(0, first_rect.x0 - 40)
-            # PyMuPDF reports rectangles in top-left page coordinates, while
-            # PDF /XYZ destinations use bottom-left coordinates.
             top = max(0, pdf_page.rect.height - max(0, first_rect.y0 - 90))
             doc.xref_set_key(
                 doc.pdf_catalog(),
