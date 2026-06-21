@@ -1,18 +1,14 @@
 """AuData FastAPI service — standalone, separate from Evidence Engine's api.py.
 
 Endpoints:
-  GET  /api/health                              — service + redis + db + browserbase status
-  GET  /api/models/local                        — local Ollama models (for the sidebar)
-  POST /api/ingest/search                       — Crossref search by name/title
-  POST /api/ingest/fetch                        — pull by DOI/title (+ Unpaywall, then Browserbase)
-  POST /api/ingest/url                          — fetch any URL via Browserbase
-  POST /api/ingest/pdf                          — parse an uploaded PDF
-  GET  /api/session/{sid}/paper                 — restore the paper under audit (Redis)
-  GET  /api/audits                              — list persisted papers (SQLite)
-  POST /api/methods-claims/check-paper/stream   — extract & assess claims vs methods (streamed)
-  POST /api/reference-integrity/check-paper/stream — check bibliography integrity (streamed)
-  POST /api/image-forensics/check-paper/stream  — extract & audit figures, check for reuse (streamed)
-
+  GET  /api/health                 — service + redis + db + browserbase status
+  GET  /api/models/local           — local Ollama models (for the sidebar)
+  POST /api/ingest/search          — Crossref search by name/title
+  POST /api/ingest/fetch           — pull by DOI/title (+ Unpaywall, then Browserbase)
+  POST /api/ingest/url             — fetch any URL via Browserbase
+  POST /api/ingest/pdf             — parse an uploaded PDF
+  GET  /api/session/{sid}/paper    — restore the paper under audit (Redis)
+  GET  /api/audits                 — list persisted papers (SQLite)
 Every ingest persists to SQLite (long-term) and, when a session id is given,
 caches the paper under audit in Redis (short-term).
 """
@@ -23,6 +19,9 @@ import json as _json
 import queue
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+import re
+import sys
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -31,23 +30,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from . import settings, ingest, storage, fulltext, llm, browserbase
+from . import settings, ingest, browserbase_fetch, storage, fulltext, llm
 from . import reference_integrity as refint
 from . import methods_claims as mc
-from . import imageforensicsagents as imgforensics
-
-# Alias for compatibility
-browserbase_fetch = browserbase
-
-from fastapi.staticfiles import StaticFiles
-
-import json
-from pathlib import Path
 
 app = FastAPI(title="AuData API", version="0.1.0")
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-app.mount("/artifacts", StaticFiles(directory=str(PROJECT_ROOT)), name="artifacts")
+_repo_root = str(Path(__file__).resolve().parents[2])
+if _repo_root not in sys.path:
+    sys.path.insert(0, _repo_root)
 
 _origins = ["http://localhost:5173", "http://localhost:4173", "http://127.0.0.1:5173"] + settings.CORS_ORIGINS
 app.add_middleware(
@@ -123,6 +114,31 @@ def _pdf_for_viewer(doi: str, pmcid: str = "", arxiv: str = "") -> Optional[byte
     except Exception as e:
         print(f"[audata _pdf_for_viewer] {e}")
     return None
+
+
+class StatisticalRecomputeRequest(BaseModel):
+    paper_id: Optional[str] = ""
+    title: Optional[str] = ""
+    full_text: str
+    tolerance: float = 0.001
+
+
+def _no_statistical_findings_reason(text: str) -> str:
+    sample = (text or "").strip()
+    if not sample:
+        return "No full text was available to scan. Try uploading the PDF or using a DOI/URL with accessible full text."
+
+    lower = sample.lower()
+    has_p_value = bool(re.search(r"\bp\s*[<>=]\s*(?:0?\.\d+|1(?:\.0+)?)", sample, re.I))
+    has_test_marker = bool(re.search(r"\b(?:t|f|r)\s*\(|χ\s*2|χ²|chi[-\s]?square", sample, re.I))
+
+    if has_p_value and not has_test_marker:
+        return "The paper reports p-values without supported test statistics, for example p < .05 only, so there is no t/F/chi-square/r value and degrees of freedom to recompute."
+    if has_p_value:
+        return "The paper includes p-values, but not in a supported recomputable pattern such as t(df)=value, F(df1,df2)=value, chi-square(df)=value, or r(df)=value paired with a p-value."
+    if any(word in lower for word in ("results", "statistical", "significant", "regression", "anova")):
+        return "The text appears to discuss statistical results, but no supported t, F, chi-square, or r claim with a reported p-value was found."
+    return "No supported statistical claim patterns were found in the extracted text. Supported patterns currently include t(df), F(df1,df2), chi-square(df), and r(df) claims paired with p-values."
 
 
 def _persist(paper: Dict[str, Any], session_id: Optional[str], pdf_bytes: Optional[bytes] = None) -> Dict[str, Any]:
@@ -315,6 +331,80 @@ def ingest_pdf_file(id: str):
         raise HTTPException(status_code=404, detail="No PDF stored for this paper.")
     return Response(content=data, media_type="application/pdf",
                     headers={"Content-Disposition": 'inline; filename="paper.pdf"'})
+
+
+@app.get("/api/audit/pdf-highlight")
+def audit_pdf_highlight(id: str, page: int, boxes: str = "[]"):
+    """Serve the full stored PDF with highlight annotations for one finding."""
+    data = storage.get_pdf(id)
+    if not data:
+        raise HTTPException(status_code=404, detail="No PDF stored for this paper.")
+    try:
+        parsed = _json.loads(boxes or "[]")
+        if not isinstance(parsed, list):
+            parsed = []
+    except Exception:
+        parsed = []
+
+    try:
+        import fitz
+        doc = fitz.open(stream=data, filetype="pdf")
+        page_index = max(0, min(page - 1, doc.page_count - 1))
+        pdf_page = doc[page_index]
+        first_rect = None
+        for box in parsed[:20]:
+            rect = fitz.Rect(float(box["x0"]), float(box["y0"]), float(box["x1"]), float(box["y1"]))
+            if first_rect is None:
+                first_rect = rect
+            annot = pdf_page.add_highlight_annot(rect)
+            annot.set_colors(stroke=(1, 0.86, 0.05))
+            annot.update(opacity=0.45)
+        if first_rect is not None:
+            # Ask PDF viewers to open near the first highlighted word. Browser
+            # URL fragments often honor only #page, but /OpenAction is embedded
+            # in the returned PDF itself.
+            left = max(0, first_rect.x0 - 40)
+            # PyMuPDF reports rectangles in top-left page coordinates, while
+            # PDF /XYZ destinations use bottom-left coordinates.
+            top = max(0, pdf_page.rect.height - max(0, first_rect.y0 - 90))
+            doc.xref_set_key(
+                doc.pdf_catalog(),
+                "OpenAction",
+                f"[{doc.page_xref(page_index)} 0 R /XYZ {left:.2f} {top:.2f} 1.5]",
+            )
+        out = doc.tobytes(garbage=4, deflate=True)
+        doc.close()
+        return Response(content=out, media_type="application/pdf",
+                        headers={"Content-Disposition": 'inline; filename="paper-highlighted.pdf"'})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Could not highlight PDF: {e}")
+
+
+@app.post("/api/audit/statistical-recompute")
+def statistical_recompute(req: StatisticalRecomputeRequest):
+    if not (req.full_text or "").strip():
+        raise HTTPException(status_code=400, detail="No full text available to audit.")
+    try:
+        from auditor.core import audit_pdf_bytes, audit_text
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Statistical auditor is unavailable: {e}")
+
+    pdf_bytes = storage.get_pdf(req.paper_id or "") if req.paper_id else None
+    if pdf_bytes:
+        result = audit_pdf_bytes(pdf_bytes, source=req.title or req.paper_id or "uploaded PDF", tolerance=req.tolerance)
+        findings = result["findings"]
+    else:
+        text_findings = audit_text(req.full_text, tolerance=req.tolerance)
+        findings = [finding.to_dict() for finding in text_findings]
+    no_findings_reason = _no_statistical_findings_reason(req.full_text) if not findings else ""
+    return {
+        "paper_id": req.paper_id,
+        "title": req.title,
+        "claim_count": len(findings),
+        "mismatch_count": sum(1 for finding in findings if finding["status"] == "mismatch"),
+        "no_findings_reason": no_findings_reason,
+        "findings": findings,
+    }
 
 
 # ── storage access ────────────────────────────────────────────────────────────
@@ -663,18 +753,11 @@ class ImageForensicsRequest(BaseModel):
 
 @app.post("/api/image-forensics/check-paper/stream")
 def image_forensics_check_paper_stream(req: ImageForensicsRequest):
-    """Full image-forensics audit of a stored paper with candidates, streamed.
-
-    Extracts figures from the target paper and candidate papers, runs forensics
-    checks (copy-move detection, ELA, splicing), and compares across papers for
-    near-duplicate/reused figures. Ends with summary.
-    """
     paper = storage.get_paper(req.paper_id)
     if not paper:
         raise HTTPException(status_code=404, detail="Paper not found. Ingest it first.")
     if not paper.get("has_pdf"):
         raise HTTPException(status_code=400, detail="Paper has no PDF — image extraction requires full PDF.")
-
     candidate_papers = []
     if req.candidate_paper_ids:
         for cid in req.candidate_paper_ids:
@@ -684,43 +767,28 @@ def image_forensics_check_paper_stream(req: ImageForensicsRequest):
     else:
         all_papers = storage.list_papers(limit=50)
         candidate_papers = [p for p in all_papers if p.get("id") != req.paper_id and p.get("has_pdf")][:10]
-
-    event_queue: "queue.Queue[tuple]" = queue.Queue()
-
+    event_queue = queue.Queue()
     def _run():
         try:
             if not candidate_papers:
                 event_queue.put(("warning", {"message": "No candidate papers with PDFs found for comparison."}))
-
             output_root = Path.home() / ".audata" / "forensics" / req.paper_id
             output_root.mkdir(parents=True, exist_ok=True)
-
             report = imgforensics.run_image_integrity_agent_from_papers(
                 target_paper=paper,
                 candidate_papers=candidate_papers,
                 output_root=str(output_root),
                 similarity_threshold=req.similarity_threshold,
             )
-
             if report.get("status") == "error":
                 event_queue.put(("error", {"message": report.get("message", "Unknown error")}))
                 return
-
             forensics_results = report.get("figure_forensics", [])
             summary = imgforensics.summarize_forensics_results(forensics_results)
-
-            event_queue.put(("done", {
-                "summary": summary,
-                "report": report,
-                "note": f"Extracted {report.get('num_target_figures', 0)} target figures, "
-                        f"{report.get('num_candidate_figures', 0)} candidate figures, "
-                        f"found {report.get('num_cross_paper_findings', 0)} potential reuse cases.",
-            }))
+            event_queue.put(("done", {"summary": summary, "report": report, "note": f"Extracted {report.get('num_target_figures', 0)} target figures, {report.get('num_candidate_figures', 0)} candidate figures, found {report.get('num_cross_paper_findings', 0)} potential reuse cases."}))
         except Exception as e:
             event_queue.put(("error", {"message": str(e)}))
-
     threading.Thread(target=_run, daemon=True).start()
-
     def _gen():
         while True:
             try:
@@ -731,34 +799,4 @@ def image_forensics_check_paper_stream(req: ImageForensicsRequest):
             yield f"event: {event_type}\ndata: {_json.dumps(data)}\n\n"
             if event_type in ("done", "error"):
                 return
-
     return StreamingResponse(_gen(), media_type="text/event-stream")
-
-
-# Image
-@app.get("/api/image-forensics/report")
-def get_latest_image_forensics_report(output_root: str = "image_forensics_output"):
-    # Resolve reports relative to the AuData project root, not the Backend working directory.
-    project_root = Path(__file__).resolve().parents[2]
-    output_path = Path(output_root)
-    if not output_path.is_absolute():
-        output_path = project_root / output_path
-
-    report_path = output_path / "image_integrity_report.json"
-    paperclip_report_path = output_path / "image_integrity_paperclip_report.json"
-
-    if paperclip_report_path.exists():
-        report_path = paperclip_report_path
-
-    if not report_path.exists():
-        return {
-            "exists": False,
-            "message": f"No image-forensics report found at {report_path}",
-        }
-
-    with open(report_path, "r") as f:
-        return {
-            "exists": True,
-            "report_path": str(report_path),
-            "report": json.load(f),
-        }
