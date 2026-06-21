@@ -41,6 +41,14 @@ export function IngestPage() {
     return ac;
   }
   function done() { setBusy(null); abortRef.current = null; }
+  function selectPaper(paper: typeof s.paperUnderAudit) {
+    s.setPaperUnderAudit(paper);
+    s.setStatAudits({});
+    s.setNumericalAudits({});
+    s.setRefAudits({});
+    s.setMethodsAudits({});
+    s.setImageAudits({});
+  }
 
   return (
     <div className="space-y-4">
@@ -70,7 +78,7 @@ export function IngestPage() {
           <TabsContent value="upload">
             <UploadTab busy={busy} onRun={async (file) => {
               const ac = start("upload");
-              try { const { paper } = await IngestService.uploadPdf(file, ac.signal); s.setPaperUnderAudit(paper); }
+              try { const { paper } = await IngestService.uploadPdf(file, ac.signal); selectPaper(paper); }
               catch (e: any) { if (e?.name !== "AbortError") setError(e?.message || "Upload failed."); }
               finally { done(); }
             }} />
@@ -79,7 +87,7 @@ export function IngestPage() {
           <TabsContent value="doi">
             <DoiTab busy={busy} onRun={async (doi) => {
               const ac = start("doi");
-              try { const r = await IngestService.fetch({ doi, useOpenAccess: true, useBrowserbase: true }, ac.signal); s.setPaperUnderAudit(r.paper); if (!r.resolved) setError("DOI did not resolve to a known record — check it."); }
+              try { const r = await IngestService.fetch({ doi, useOpenAccess: true, useBrowserbase: true }, ac.signal); selectPaper(r.paper); if (!r.resolved) setError("DOI did not resolve to a known record — check it."); }
               catch (e: any) { if (e?.name !== "AbortError") setError(e?.message || "Fetch failed."); }
               finally { done(); }
             }} />
@@ -89,7 +97,7 @@ export function IngestPage() {
             <SearchTab busy={busy} setBusy={setBusy} setError={setError}
               onPick={async (c) => {
                 const ac = start("doi");
-                try { const r = await IngestService.fetch({ doi: c.doi, title: c.title, useOpenAccess: true, useBrowserbase: true }, ac.signal); s.setPaperUnderAudit(r.paper); }
+                try { const r = await IngestService.fetch({ doi: c.doi, title: c.title, useOpenAccess: true, useBrowserbase: true }, ac.signal); selectPaper(r.paper); }
                 catch (e: any) { if (e?.name !== "AbortError") setError(e?.message || "Fetch failed."); }
                 finally { done(); }
               }} />
@@ -98,7 +106,7 @@ export function IngestPage() {
           <TabsContent value="url">
             <UrlTab busy={busy} onRun={async (url) => {
               const ac = start("url");
-              try { const { paper } = await IngestService.fetchUrl(url, ac.signal); s.setPaperUnderAudit(paper); }
+              try { const { paper } = await IngestService.fetchUrl(url, ac.signal); selectPaper(paper); }
               catch (e: any) { if (e?.name !== "AbortError") setError(e?.message || "Browserbase fetch failed."); }
               finally { done(); }
             }} />

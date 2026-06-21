@@ -90,14 +90,7 @@ export function MethodsClaimsPage() {
     };
     const local = s.methodsAudits[auditKey];
     if (local) { apply(local); }
-    else if (paper) {
-      apply(null);
-      AuditStore.getAll(paper.id).then((audits) => {
-        if (cancelled || !audits.methods) return;
-        s.setMethodsAudits({ ...s.methodsAudits, [auditKey]: audits.methods });
-        apply(audits.methods);
-      });
-    } else { apply(null); }
+    else { apply(null); }
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auditKey]);

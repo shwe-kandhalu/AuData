@@ -14,7 +14,7 @@ import { IngestPage } from "./pages/IngestPage";
 import { ReferenceIntegrityPage } from "./pages/ReferenceIntegrityPage";
 import { MethodsClaimsPage } from "./pages/MethodsClaimsPage";
 import { ImageForensicsPage } from "./pages/ImageForensicsPage";
-import { IngestService, AuditStore } from "./lib/apiClient";
+import { IngestService } from "./lib/apiClient";
 import { RecomputePage } from "./pages/RecomputePage";
 import { LayoutDashboard, Upload, Calculator, Hash, Image as ImageIcon, GitCompare, BookMarked, Gauge, ShieldCheck, FileText, Users } from "lucide-react";
 
@@ -56,24 +56,6 @@ function Shell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Whenever the paper under audit changes (open / restore), pull ALL of its
-  // saved detection results from the server so every tab (incl. Dashboard)
-  // shows them without having to visit each detector first.
-  const paperId = s.paperUnderAudit?.id;
-  useEffect(() => {
-    if (!paperId) return;
-    let cancelled = false;
-    AuditStore.getAll(paperId).then((a) => {
-      if (cancelled) return;
-      if (a.statistical && !s.statAudits[paperId]) s.setStatAudits({ ...s.statAudits, [paperId]: a.statistical });
-      if (a.numerical && !s.numericalAudits[paperId]) s.setNumericalAudits({ ...s.numericalAudits, [paperId]: a.numerical });
-      if (a.references && !s.refAudits[paperId]) s.setRefAudits({ ...s.refAudits, [paperId]: a.references });
-      if (a.methods && !s.methodsAudits[paperId]) s.setMethodsAudits({ ...s.methodsAudits, [paperId]: a.methods });
-      if (a.images && !s.imageAudits[paperId]) s.setImageAudits({ ...s.imageAudits, [paperId]: a.images });
-    });
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paperId]);
   return (
     <div className="flex min-h-screen bg-background text-foreground">
       <Toaster richColors position="top-right" />

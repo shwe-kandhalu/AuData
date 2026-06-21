@@ -57,13 +57,6 @@ export function ImageForensicsPage() {
     const local = s.imageAudits?.[auditKey];
     if (local) {
       apply(local);
-    } else if (paper) {
-      apply(null);
-      AuditStore.getAll(paper.id).then((audits) => {
-        if (cancelled || !audits.images) return;
-        s.setImageAudits?.({ ...s.imageAudits, [auditKey]: audits.images });
-        apply(audits.images);
-      });
     } else {
       apply(null);
     }

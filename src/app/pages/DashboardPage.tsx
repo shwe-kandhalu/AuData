@@ -15,6 +15,12 @@ type Built = {
   audit: any; // { summary?: { total, flagged, ... } }
 };
 
+function summaryTotal(summary: any): number {
+  if (typeof summary?.total === "number") return summary.total;
+  if (typeof summary?.total_images === "number") return summary.total_images;
+  return 0;
+}
+
 export function DashboardPage() {
   const s = useStore();
   const paper = s.paperUnderAudit;
@@ -82,6 +88,7 @@ export function DashboardPage() {
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {built.map((b) => {
           const sum = b.audit?.summary;
+          const total = summaryTotal(sum);
           const Icon = b.icon;
           return (
             <button key={b.page} onClick={() => s.setPage(b.page)}
@@ -93,7 +100,7 @@ export function DashboardPage() {
               {sum ? (
                 <div className="mt-2 flex items-baseline gap-1.5">
                   <span className={`text-2xl font-semibold ${sum.flagged > 0 ? "text-amber-600" : "text-emerald-600"}`}>{sum.flagged}</span>
-                  <span className="text-xs text-muted-foreground">flagged of {sum.total}</span>
+                  <span className="text-xs text-muted-foreground">flagged of {total}</span>
                 </div>
               ) : (
                 <div className="mt-2 text-xs text-muted-foreground">Not run yet — click to run</div>

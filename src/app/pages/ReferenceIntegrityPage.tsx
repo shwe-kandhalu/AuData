@@ -117,15 +117,7 @@ export function ReferenceIntegrityPage() {
     };
     const local = s.refAudits[auditKey];
     if (local) { apply(local); }
-    else if (paper) {
-      apply(null);
-      // Not in the local store — pull this paper's saved results from the server (Redis).
-      AuditStore.getAll(paper.id).then((audits) => {
-        if (cancelled || !audits.references) return;
-        s.setRefAudits({ ...s.refAudits, [auditKey]: audits.references });
-        apply(audits.references);
-      });
-    } else { apply(null); }
+    else { apply(null); }
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auditKey]);

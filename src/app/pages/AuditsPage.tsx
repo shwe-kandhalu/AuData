@@ -8,7 +8,7 @@ import { Badge } from "../components/ui/badge";
 import { Input } from "../components/ui/input";
 import { FolderOpen, Upload, Loader2, RefreshCw, Ban, Check, Search, FileText } from "lucide-react";
 import { useStore } from "../lib/store";
-import { AuditsService, AuditStore, type AuditListItem } from "../lib/apiClient";
+import { AuditsService, type AuditListItem } from "../lib/apiClient";
 
 export function AuditsPage() {
   const s = useStore();
@@ -30,14 +30,11 @@ export function AuditsPage() {
       const paper = await AuditsService.getPaper(id);
       if (!paper) return;
       s.setPaperUnderAudit(paper);
-      // Load every stage's saved results (from Redis/SQLite) so each tab opens
-      // populated for this paper.
-      const audits = await AuditStore.getAll(id);
-      if (audits.statistical) s.setStatAudits({ ...s.statAudits, [id]: audits.statistical });
-      if (audits.numerical) s.setNumericalAudits({ ...s.numericalAudits, [id]: audits.numerical });
-      if (audits.references) s.setRefAudits({ ...s.refAudits, [id]: audits.references });
-      if (audits.methods) s.setMethodsAudits({ ...s.methodsAudits, [id]: audits.methods });
-      if (audits.images) s.setImageAudits({ ...s.imageAudits, [id]: audits.images });
+      s.setStatAudits({});
+      s.setNumericalAudits({});
+      s.setRefAudits({});
+      s.setMethodsAudits({});
+      s.setImageAudits({});
       s.setPage("dashboard");
     } finally { setOpening(null); }
   }
