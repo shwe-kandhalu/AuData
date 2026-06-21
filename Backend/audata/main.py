@@ -743,3 +743,82 @@ def reference_integrity_check_paper_stream(req: CheckPaperRequest):
                 return
 
     return StreamingResponse(_gen(), media_type="text/event-stream")
+
+class ImageForensicsRequest(BaseModel):
+    paper_id: str
+    candidate_paper_ids: Optional[List[str]] = None
+    similarity_threshold: int = 8
+
+
+@app.post("/api/image-forensics/check-paper/stream")
+def image_forensics_check_paper_stream(req: ImageForensicsRequest):
+    """Full image-forensics audit of a stored paper with candidates, streamed.
+
+    Extracts figures from the target paper and candidate papers, runs forensics
+    checks (copy-move detection, ELA, splicing), and compares across papers for
+    near-duplicate/reused figures. Ends with summary.
+    """
+    paper = storage.get_paper(req.paper_id)
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found. Ingest it first.")
+    if not paper.get("has_pdf"):
+        raise HTTPException(status_code=400, detail="Paper has no PDF — image extraction requires full PDF.")
+
+    candidate_papers = []
+    if req.candidate_paper_ids:
+        for cid in req.candidate_paper_ids:
+            cp = storage.get_paper(cid)
+            if cp and cp.get("has_pdf"):
+                candidate_papers.append(cp)
+    else:
+        all_papers = storage.list_papers(limit=50)
+        candidate_papers = [p for p in all_papers if p.get("id") != req.paper_id and p.get("has_pdf")][:10]
+
+    event_queue: "queue.Queue[tuple]" = queue.Queue()
+
+    def _run():
+        try:
+            if not candidate_papers:
+                event_queue.put(("warning", {"message": "No candidate papers with PDFs found for comparison."}))
+
+            output_root = Path.home() / ".audata" / "forensics" / req.paper_id
+            output_root.mkdir(parents=True, exist_ok=True)
+
+            report = imgforensics.run_image_integrity_agent_from_papers(
+                target_paper=paper,
+                candidate_papers=candidate_papers,
+                output_root=str(output_root),
+                similarity_threshold=req.similarity_threshold,
+            )
+
+            if report.get("status") == "error":
+                event_queue.put(("error", {"message": report.get("message", "Unknown error")}))
+                return
+
+            forensics_results = report.get("figure_forensics", [])
+            summary = imgforensics.summarize_forensics_results(forensics_results)
+
+            event_queue.put(("done", {
+                "summary": summary,
+                "report": report,
+                "note": f"Extracted {report.get('num_target_figures', 0)} target figures, "
+                        f"{report.get('num_candidate_figures', 0)} candidate figures, "
+                        f"found {report.get('num_cross_paper_findings', 0)} potential reuse cases.",
+            }))
+        except Exception as e:
+            event_queue.put(("error", {"message": str(e)}))
+
+    threading.Thread(target=_run, daemon=True).start()
+
+    def _gen():
+        while True:
+            try:
+                event_type, data = event_queue.get(timeout=600)
+            except queue.Empty:
+                yield f"event: error\ndata: {_json.dumps({'message': 'timeout'})}\n\n"
+                return
+            yield f"event: {event_type}\ndata: {_json.dumps(data)}\n\n"
+            if event_type in ("done", "error"):
+                return
+
+    return StreamingResponse(_gen(), media_type="text/event-stream")
