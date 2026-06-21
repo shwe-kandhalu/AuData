@@ -3,7 +3,8 @@ detector's findings for a paper: Statistical Recompute (p-values), Meta-analysis
 Numerical Consistency, Image Forensics, Methods<->Claims, and Reference Integrity.
 
 Reads the persisted per-paper audit stages (the same data the UI Audit Report
-shows) and renders a clean, professional Word document.
+shows) and renders a clean, professional Word document. Each finding carries a
+locator (page and/or a verbatim quote) so a reviewer can find it in the paper.
 """
 
 from __future__ import annotations
@@ -22,8 +23,12 @@ def _sev(x: Any) -> str:
     return "medium" if s == "moderate" else s
 
 
+def _it(title: str, severity: str, detail: str = "", loc: str = "", quote: str = "") -> Dict[str, str]:
+    return {"title": title, "severity": severity, "detail": detail, "loc": loc, "quote": quote}
+
+
 def _norm(key: str, d: Any) -> Dict[str, Any]:
-    """Normalize one stage's data -> {ran, total, flagged, items:[{title,severity,detail}], note}."""
+    """Normalize a stage -> {ran, total, flagged, items:[{title,severity,detail,loc,quote}], note}."""
     if not d:
         return {"ran": False}
     items: List[Dict[str, str]] = []
@@ -32,56 +37,64 @@ def _norm(key: str, d: Any) -> Dict[str, Any]:
         fl = [r for r in res if r.get("status") == "flagged"]
         for r in fl:
             title = (r.get("matched") or {}).get("title") or (r.get("input") or {}).get("raw") or f"Reference {r.get('number','')}"
-            items.append({"title": title, "severity": _sev(r.get("severity")),
-                          "detail": "; ".join(i.get("label", "") for i in (r.get("issues") or []))})
+            loc = f"Reference [{r.get('number')}]" if r.get("number") else ""
+            quote = (r.get("input") or {}).get("raw") or ""
+            items.append(_it(title, _sev(r.get("severity")),
+                             "; ".join(i.get("label", "") for i in (r.get("issues") or [])), loc, quote))
         return {"ran": True, "total": (d.get("summary") or {}).get("total", len(res)),
                 "flagged": (d.get("summary") or {}).get("flagged", len(fl)), "items": items}
     if key == "methods":
         res = d.get("results", []) or []
         fl = [r for r in res if r.get("status") == "flagged"]
         for r in fl:
-            items.append({"title": r.get("claim", ""), "severity": _sev(r.get("severity")),
-                          "detail": " - ".join(x for x in (r.get("issue_type"), r.get("reasoning")) if x)})
+            items.append(_it(r.get("claim", ""), _sev(r.get("severity")),
+                             " - ".join(x for x in (r.get("issue_type"), r.get("reasoning")) if x),
+                             "", r.get("quote") or ""))
         return {"ran": True, "total": (d.get("summary") or {}).get("total", len(res)),
                 "flagged": (d.get("summary") or {}).get("flagged", len(fl)), "items": items}
     if key == "statcheck":
         f = d.get("findings", []) or []
         fl = [x for x in f if x.get("status") == "mismatch"]
         for x in fl:
-            items.append({"title": x.get("claim", ""), "severity": "high",
-                          "detail": x.get("note", "Reported p-value does not match the recomputed value.")})
+            ev = x.get("evidence") or {}
+            page = ev.get("page")
+            loc = f"p. {page}" if page else ""
+            quote = ev.get("exact_quote") or ev.get("quote") or ""
+            items.append(_it(x.get("claim", ""), "high",
+                             x.get("note", "Reported p-value does not match the recomputed value."), loc, quote))
         return {"ran": True, "total": d.get("claim_count", len(f)),
                 "flagged": d.get("mismatch_count", len(fl)), "items": items}
     if key == "numerical":
         flags = d.get("flags", []) or []
         for x in flags:
-            items.append({"title": x.get("description") or x.get("type") or "Inconsistency",
-                          "severity": _sev(x.get("severity")),
-                          "detail": f'"{x.get("excerpt")}"' if x.get("excerpt") else (x.get("type") or "")})
+            items.append(_it(x.get("description") or x.get("type") or "Inconsistency",
+                             _sev(x.get("severity")), x.get("type") or "", "", x.get("excerpt") or ""))
         return {"ran": True, "total": len(flags), "flagged": len(flags), "items": items}
     if key == "images":
         summ = d.get("summary") or {}
         report = d.get("report") or {}
         for fnd in (report.get("cross_paper_findings") or []):
             score = fnd.get("similarity_score")
-            items.append({"title": f"{fnd.get('flag_type','Figure reuse')}: {fnd.get('target_figure','')} ~ {fnd.get('candidate_figure','')}",
-                          "severity": _sev(fnd.get("severity")),
-                          "detail": f"cross-paper similarity {score:.2f}" if isinstance(score, (int, float)) else f"cross-paper similarity {score}"})
+            items.append(_it(f"{fnd.get('flag_type','Figure reuse')}: {fnd.get('target_figure','')} ~ {fnd.get('candidate_figure','')}",
+                             _sev(fnd.get("severity")),
+                             f"cross-paper similarity {score:.2f}" if isinstance(score, (int, float)) else f"cross-paper similarity {score}",
+                             "cross-paper"))
         for r in (report.get("figure_forensics") or []):
-            fig = f"page {r.get('metadata',{}).get('page')}" if r.get("metadata", {}).get("page") else "a figure"
+            page = r.get("metadata", {}).get("page")
+            loc = f"Figure, p. {page}" if page else "Figure"
             cm = r.get("copy_move_result") or {}
             sp = r.get("splice_result") or {}
             if cm.get("severity") and cm["severity"] not in ("low", "none"):
-                items.append({"title": f"Copy-move in {fig}", "severity": _sev(cm["severity"]), "detail": "Cloned region detected within the figure."})
+                items.append(_it(f"Copy-move detected", _sev(cm["severity"]), "Cloned region within the figure.", loc))
             if sp.get("severity") and sp["severity"] not in ("low", "none"):
-                items.append({"title": f"Splice boundary in {fig}", "severity": _sev(sp["severity"]), "detail": "Possible splice / edited boundary."})
+                items.append(_it("Splice boundary", _sev(sp["severity"]), "Possible splice / edited boundary.", loc))
             ai = r.get("ai_generated_score")
             if isinstance(ai, (int, float)) and ai >= 0.7:
-                items.append({"title": f"Possibly AI-generated ({fig})", "severity": "medium", "detail": f"heuristic score {ai:.2f}"})
+                items.append(_it("Possibly AI-generated", "medium", f"heuristic score {ai:.2f}", loc))
             vlm = r.get("vlm_result") or {}
             if vlm.get("verdict") and vlm["verdict"] != "clean" and (vlm.get("confidence") or 0) >= 0.5:
                 label = "possibly AI-generated" if vlm["verdict"] == "ai_generated" else "manipulation suspected"
-                items.append({"title": f"Vision model: {label} ({fig})", "severity": "medium", "detail": vlm.get("reason", "")})
+                items.append(_it(f"Vision model: {label}", "medium", vlm.get("reason", ""), loc))
         return {"ran": True, "total": summ.get("total_images", report.get("num_target_figures", 0)),
                 "flagged": summ.get("flagged", len(items)), "items": items}
     if key == "meta":
@@ -89,8 +102,7 @@ def _norm(key: str, d: Any) -> Dict[str, Any]:
             return {"ran": True, "total": 0, "flagged": 0, "items": [], "note": "No meta-analysis detected in this paper."}
         disc = d.get("verdict") == "discrepancy"
         if disc:
-            items.append({"title": f"Pooled {d.get('measure','')} discrepancy", "severity": _sev(d.get("severity")),
-                          "detail": d.get("explanation", "")})
+            items.append(_it(f"Pooled {d.get('measure','')} discrepancy", _sev(d.get("severity")), d.get("explanation", ""), "Forest plot / pooled estimate"))
         return {"ran": True, "total": 1, "flagged": 1 if disc else 0, "items": items,
                 "note": None if disc else d.get("explanation")}
     return {"ran": False}
@@ -105,10 +117,12 @@ _SECTIONS = [
     ("references", "Reference Integrity"),
 ]
 
-# Restrained palette: structure in grayscale; severity only as small colored text.
 _NAVY = (0x1F, 0x3A, 0x5F)
 _GRAY = (0x60, 0x60, 0x60)
-_HEADER_FILL = "F2F2F2"
+_WHITE = (0xFF, 0xFF, 0xFF)
+_HEADER_FILL = "EAEEF3"
+_ZEBRA_FILL = "F7F9FB"
+_BAND_FILL = "1F3A5F"
 _SEV_TXT = {
     "high":   (0x9C, 0x1F, 0x1F),
     "medium": (0x8A, 0x52, 0x00),
@@ -129,18 +143,28 @@ def _shade(cell, fill_hex: str) -> None:
     tcPr.append(shd)
 
 
-def _hrule(paragraph) -> None:
+def _footer_page(doc) -> None:
     from docx.oxml.ns import qn
     from docx.oxml import OxmlElement
-    pPr = paragraph._p.get_or_add_pPr()
-    pbdr = OxmlElement("w:pBdr")
-    bottom = OxmlElement("w:bottom")
-    bottom.set(qn("w:val"), "single")
-    bottom.set(qn("w:sz"), "6")
-    bottom.set(qn("w:space"), "2")
-    bottom.set(qn("w:color"), "BFBFBF")
-    pbdr.append(bottom)
-    pPr.append(pbdr)
+    from docx.shared import Pt, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    p = doc.sections[0].footer.paragraphs[0]
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    lead = p.add_run("AuData  ·  Research Integrity Audit  ·  Page ")
+    lead.font.size = Pt(8)
+    lead.font.color.rgb = RGBColor(0x90, 0x90, 0x90)
+    run = p.add_run()
+    run.font.size = Pt(8)
+    run.font.color.rgb = RGBColor(0x90, 0x90, 0x90)
+    for kind, val in (("begin", None), ("instr", "PAGE"), ("end", None)):
+        if kind == "instr":
+            el = OxmlElement("w:instrText")
+            el.set(qn("xml:space"), "preserve")
+            el.text = val
+        else:
+            el = OxmlElement("w:fldChar")
+            el.set(qn("w:fldCharType"), kind)
+        run._r.append(el)
 
 
 def build_docx(paper_id: str) -> bytes:
@@ -164,14 +188,25 @@ def build_docx(paper_id: str) -> bytes:
     except Exception:
         pass
 
-    title = doc.add_heading("Research Integrity Audit Report", level=0)
-    for r in title.runs:
-        r.font.color.rgb = RGBColor(*_NAVY)
+    def heading(text, level):
+        h = doc.add_heading(text, level=level)
+        for r in h.runs:
+            r.font.color.rgb = RGBColor(*_NAVY)
+        return h
 
-    tp = doc.add_paragraph()
-    tr = tp.add_run(paper.get("title") or paper_id)
-    tr.bold = True
-    tr.font.size = Pt(13)
+    # ── cover band ──
+    band = doc.add_table(rows=1, cols=1)
+    bc = band.rows[0].cells[0]
+    _shade(bc, _BAND_FILL)
+    t1 = bc.paragraphs[0].add_run("RESEARCH INTEGRITY AUDIT REPORT")
+    t1.bold = True
+    t1.font.size = Pt(15)
+    t1.font.color.rgb = RGBColor(*_WHITE)
+    p2 = bc.add_paragraph()
+    t2 = p2.add_run(paper.get("title") or paper_id)
+    t2.font.size = Pt(11)
+    t2.font.color.rgb = RGBColor(0xD8, 0xE2, 0xF0)
+
     meta_line = " · ".join(str(x) for x in (paper.get("authors"), paper.get("year"), paper.get("container")) if x)
     if meta_line:
         mp = doc.add_paragraph()
@@ -183,10 +218,9 @@ def build_docx(paper_id: str) -> bytes:
     gr.italic = True
     gr.font.size = Pt(8)
     gr.font.color.rgb = RGBColor(*_GRAY)
-    _hrule(gp)
 
     # ── Summary ──
-    doc.add_heading("Summary", level=2)
+    heading("Summary", 2)
     sp = doc.add_paragraph()
     if run_sections:
         verdict = ("No integrity issues were detected" if clean
@@ -207,7 +241,6 @@ def build_docx(paper_id: str) -> bytes:
     else:
         sp.add_run("No detectors have been run for this paper yet.")
 
-    # detectors overview table
     dt = doc.add_table(rows=1, cols=3)
     dt.style = "Table Grid"
     for i, h in enumerate(("Detector", "Result", "Findings")):
@@ -216,8 +249,12 @@ def build_docx(paper_id: str) -> bytes:
         rr = c.paragraphs[0].add_run(h)
         rr.bold = True
         rr.font.size = Pt(9)
-    for label, n in sections:
+        rr.font.color.rgb = RGBColor(*_NAVY)
+    for ri, (label, n) in enumerate(sections):
         cells = dt.add_row().cells
+        if ri % 2 == 0:
+            for cc in cells:
+                _shade(cc, _ZEBRA_FILL)
         cells[0].paragraphs[0].add_run(label).font.size = Pt(10)
         ran = n.get("ran")
         flagged = n.get("flagged", 0)
@@ -242,20 +279,21 @@ def build_docx(paper_id: str) -> bytes:
 
     # ── Detailed findings ──
     if any(n.get("flagged") for _, n in run_sections):
-        doc.add_heading("Detailed findings", level=2)
+        heading("Detailed findings", 2)
         for label, n in sections:
             if not n.get("ran") or not n.get("flagged"):
                 continue
-            doc.add_heading(label, level=3)
+            heading(label, 3)
             items = sorted(n.get("items", []), key=lambda it: -_SEV_RANK.get(it["severity"], 0))
             ft = doc.add_table(rows=1, cols=2)
             ft.style = "Table Grid"
-            for i, h in enumerate(("Severity", "Finding")):
+            for i, h in enumerate(("Severity", "Finding & where to find it")):
                 c = ft.rows[0].cells[i]
                 _shade(c, _HEADER_FILL)
                 rr = c.paragraphs[0].add_run(h)
                 rr.bold = True
                 rr.font.size = Pt(9)
+                rr.font.color.rgb = RGBColor(*_NAVY)
             for it in items:
                 cells = ft.add_row().cells
                 sv = cells[0].paragraphs[0].add_run(it["severity"].upper())
@@ -270,6 +308,19 @@ def build_docx(paper_id: str) -> bytes:
                     dr = dp.add_run(it["detail"])
                     dr.font.size = Pt(9)
                     dr.font.color.rgb = RGBColor(*_GRAY)
+                loc = it.get("loc")
+                quote = it.get("quote")
+                if loc or quote:
+                    wp = cells[1].add_paragraph()
+                    wl = wp.add_run("Where:  ")
+                    wl.bold = True
+                    wl.font.size = Pt(8.5)
+                    wl.font.color.rgb = RGBColor(*_NAVY)
+                    where = "  ·  ".join(x for x in [loc, (f"“{quote[:240]}”" if quote else "")] if x)
+                    wr = wp.add_run(where)
+                    wr.font.size = Pt(8.5)
+                    wr.italic = True
+                    wr.font.color.rgb = RGBColor(*_GRAY)
             for row in ft.rows:
                 row.cells[0].width = Inches(0.9)
                 row.cells[1].width = Inches(5.6)
@@ -277,7 +328,7 @@ def build_docx(paper_id: str) -> bytes:
     # ── Passed checks ──
     passed = [label for label, n in sections if n.get("ran") and not n.get("flagged")]
     if passed:
-        doc.add_heading("Passed checks", level=2)
+        heading("Passed checks", 2)
         pp = doc.add_paragraph()
         for i, label in enumerate(passed):
             mark = pp.add_run(("     " if i else "") + "✓ ")
@@ -288,10 +339,13 @@ def build_docx(paper_id: str) -> bytes:
 
     doc.add_paragraph()
     foot = doc.add_paragraph()
-    fr = foot.add_run("Generated by AuData. Flags are decision support for a human reviewer, not determinations of misconduct.")
+    fr = foot.add_run("Flags are decision support for a human reviewer, not determinations of misconduct. "
+                      "Locators reference the paper's extracted text; quotes can be searched (Ctrl/Cmd-F) in the source PDF.")
     fr.italic = True
     fr.font.size = Pt(8)
     fr.font.color.rgb = RGBColor(*_GRAY)
+
+    _footer_page(doc)
 
     buf = io.BytesIO()
     doc.save(buf)
