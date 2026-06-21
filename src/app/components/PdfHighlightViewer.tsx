@@ -51,11 +51,15 @@ export function PdfHighlightViewer({ url, terms }: { url: string; terms: string[
         const pdf = await pdfjsLib.getDocument({ data }).promise;
         if (cancelled) return;
 
-        // Fit the page width to the container so it never overflows the dialog.
+        // Fit the page width to the container. Wait a frame so the dialog has
+        // finished laying out before measuring (otherwise width reads as 0).
         const first = await pdf.getPage(1);
         const base = first.getViewport({ scale: 1 });
-        const cw = (container.clientWidth || 900) - 24;
-        const scale = Math.max(0.9, Math.min(3, cw / base.width));
+        await new Promise<void>((r) => requestAnimationFrame(() => r()));
+        if (cancelled) return;
+        let cw = container.clientWidth;
+        if (!cw || cw < 400) cw = Math.min(window.innerWidth * 0.92, 1320);
+        const scale = Math.max(1.0, Math.min(3.5, (cw - 8) / base.width));
         // Render at device pixel ratio so text is crisp on retina displays.
         const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
@@ -149,7 +153,7 @@ export function PdfHighlightViewer({ url, terms }: { url: string; terms: string[
           {matchCount > 0 ? `Highlighted ${matchCount} passage${matchCount === 1 ? "" : "s"} — scrolled to the first.` : "No matching text found to highlight in the PDF."}
         </div>
       )}
-      <div ref={containerRef} className="overflow-auto max-h-[78vh] bg-muted/30 rounded p-2" />
+      <div ref={containerRef} className="overflow-auto max-h-[85vh] bg-muted/30 rounded p-1" />
     </div>
   );
 }
