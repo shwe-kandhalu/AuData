@@ -1,4 +1,4 @@
-import { Component, ReactNode, useEffect } from "react";
+import { Component, ReactNode, useEffect, useState } from "react";
 import { Sidebar } from "./components/Sidebar";
 import { Toaster } from "./components/ui/sonner";
 import { StoreProvider, useStore } from "./lib/store";
@@ -32,6 +32,25 @@ function Shell() {
   const s = useStore();
   const meta = PAGE_META[s.page];
   const Icon = meta.icon;
+
+  // Keep-alive routing: mount each page the first time it is visited, then keep
+  // it mounted and just toggle visibility. Switching tabs becomes instant (no
+  // remount, no re-fetch, no re-render of big lists) and per-tab state survives.
+  const [visited, setVisited] = useState<Set<string>>(() => new Set([s.page]));
+  useEffect(() => {
+    setVisited((prev) => (prev.has(s.page) ? prev : new Set(prev).add(s.page)));
+  }, [s.page]);
+  const PAGES: { id: string; node: ReactNode }[] = [
+    { id: "dashboard", node: <DashboardPage /> },
+    { id: "audits", node: <AuditsPage /> },
+    { id: "ingest", node: <IngestPage /> },
+    { id: "recompute", node: <RecomputePage /> },
+    { id: "numerical", node: <NumericalPage /> },
+    { id: "imaging", node: <ImageForensicsPage /> },
+    { id: "methods", node: <MethodsClaimsPage /> },
+    { id: "references", node: <ReferenceIntegrityPage /> },
+    { id: "report", node: <ReportPage /> },
+  ];
   // If we landed on a /?invite=TOKEN URL, route to the Audits page so the
   // user sees the accept-invite banner. AuditsPage owns the actual accept flow.
   useEffect(() => {
@@ -104,15 +123,11 @@ function Shell() {
           </div>
         </header>
         <div className="max-w-6xl mx-auto p-6">
-          {s.page === "dashboard" && <DashboardPage />}
-          {s.page === "audits" && <AuditsPage />}
-          {s.page === "ingest" && <IngestPage />}
-          {s.page === "recompute" && <RecomputePage />}
-          {s.page === "numerical" && <NumericalPage />}
-          {s.page === "imaging" && <ImageForensicsPage />}
-          {s.page === "methods" && <MethodsClaimsPage />}
-          {s.page === "references" && <ReferenceIntegrityPage />}
-          {s.page === "report" && <ReportPage />}
+          {PAGES.map(({ id, node }) =>
+            visited.has(id) ? (
+              <div key={id} className={s.page === id ? "" : "hidden"}>{node}</div>
+            ) : null,
+          )}
         </div>
       </main>
     </div>

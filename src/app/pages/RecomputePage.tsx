@@ -82,6 +82,23 @@ export function RecomputePage() {
   const [locateOpen, setLocateOpen] = useState(false);
   const [view, setView] = useState<"stats" | "meta">("stats");
 
+  // Hydrate the saved statistical recompute for this paper, so results persist
+  // across tab switches and when a paper audit is pulled back from the session.
+  useEffect(() => {
+    let cancelled = false;
+    setResult(null); setSelected(null);
+    if (!paper) return;
+    AuditStore.getAll(paper.id).then((a) => {
+      if (cancelled || !a.statcheck) return;
+      const r = a.statcheck as StatisticalRecomputeResult;
+      setResult(r);
+      const fm = r.findings?.findIndex((f) => f.status === "mismatch") ?? -1;
+      setSelected(r.findings?.length ? (fm >= 0 ? fm : 0) : null);
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paper?.id]);
+
   async function runAudit() {
     if (!paper) return;
     setBusy(true); setError(""); setSelected(null);
