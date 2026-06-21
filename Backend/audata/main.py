@@ -38,6 +38,8 @@ from . import meta_analysis as ma
 from . import numerical as nu
 from . import report_doc
 from . import band
+from . import langcache
+from . import agent_memory
 
 # Sentry error monitoring — active only when SENTRY_DSN is set (no-op otherwise).
 import os as _os
@@ -69,11 +71,6 @@ app.add_middleware(
 @app.on_event("startup")
 def _startup():
     storage.init_db()
-    try:
-        from . import observability
-        observability.setup()   # Arize / Phoenix tracing (no-op unless configured)
-    except Exception as e:
-        print(f"[audata] observability setup error: {e}")
 
 
 # ── status ────────────────────────────────────────────────────────────────────
@@ -103,12 +100,33 @@ def integrations():
         "browserbase": {"active": browserbase_fetch.available()},
         "sentry": {"active": bool(_os.getenv("SENTRY_DSN")), "installed": _mod("sentry_sdk")},
         "token_router": {"active": bool(_os.getenv("TOKENROUTER_API_KEY"))},
-        "arize_phoenix": {"active": bool(_os.getenv("ARIZE_API_KEY") or _os.getenv("PHOENIX_COLLECTOR_ENDPOINT") or _os.getenv("AUDATA_PHOENIX")),
-                          "installed": _mod("openinference.instrumentation.langchain")},
         "fetch_uagents": {"installed": _mod("uagents"), "active": bool(_os.getenv("FETCH_AGENT_MAILBOX")),
                           "note": "run `python -m audata.agents`; set FETCH_AGENT_MAILBOX for ASI:One"},
         "band": {"active": band.available()},
+        "langcache": {"active": langcache.available(), "installed": _mod("langcache"),
+                      "note": "needs REDIS_LANGCACHE_API_KEY + LANGCACHE_SERVER_URL + LANGCACHE_CACHE_ID"},
+        "agent_memory": {"active": agent_memory.available(), "installed": _mod("agent_memory_client"),
+                         "note": "needs AGENT_MEMORY_BASE_URL"},
     }
+
+
+class MemoryRecordRequest(BaseModel):
+    text: str
+    topics: Optional[List[str]] = None
+
+
+@app.post("/api/memory/record")
+def memory_record(req: MemoryRecordRequest):
+    if not agent_memory.available():
+        raise HTTPException(status_code=400, detail="Agent Memory not configured (set AGENT_MEMORY_BASE_URL).")
+    return {"ok": agent_memory.record(req.text, req.topics or [])}
+
+
+@app.get("/api/memory/search")
+def memory_search(q: str, limit: int = 5):
+    if not agent_memory.available():
+        raise HTTPException(status_code=400, detail="Agent Memory not configured (set AGENT_MEMORY_BASE_URL).")
+    return {"memories": agent_memory.search(q, limit)}
 
 
 @app.get("/api/models/local")

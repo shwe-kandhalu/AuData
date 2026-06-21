@@ -47,8 +47,7 @@ ImageHash>=4.3.1
 
 # --- Sponsor integrations ---
 sentry-sdk[fastapi]>=2.0.0          # error monitoring (set SENTRY_DSN)
-arize-otel>=0.7.0                   # Arize tracing (set ARIZE_API_KEY + ARIZE_SPACE_ID)
-openinference-instrumentation-langchain>=0.1.0
-opentelemetry-exporter-otlp-proto-http>=1.20.0
 uagents>=0.13.0                     # Fetch.ai agent layer (python -m audata.agents)
 # sentence-transformers>=2.2.0      # OPTIONAL, large (~2GB w/ torch): enables Redis image vector search
+langcache>=0.1.0                    # Redis LangCache semantic cache (set LANGCACHE_SERVER_URL + LANGCACHE_CACHE_ID)
+agent-memory-client>=0.1.0         # Redis Agent Memory Server (set AGENT_MEMORY_BASE_URL)

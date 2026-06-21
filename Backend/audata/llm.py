@@ -111,11 +111,17 @@ def invoke(model, prompt: str, cache: bool = True) -> str:
     if model is None:
         return ""
     name = getattr(model, "model", None) or getattr(model, "model_name", "") or ""
+    cache_prompt = f"{name}\n{prompt}"
     key = None
     if cache:
         import hashlib
-        from . import storage
-        key = hashlib.sha256(f"{name}\n{prompt}".encode("utf-8")).hexdigest()
+        from . import storage, langcache
+        # 1) semantic cache (Redis LangCache) — hits on similar prompts
+        sem = langcache.search(cache_prompt)
+        if sem is not None:
+            return sem
+        # 2) exact-match cache (Redis / in-memory)
+        key = hashlib.sha256(cache_prompt.encode("utf-8")).hexdigest()
         hit = storage.cache_get(key)
         if hit is not None:
             return hit
@@ -126,10 +132,12 @@ def invoke(model, prompt: str, cache: bool = True) -> str:
     except Exception as e:
         print(f"[audata.llm] invoke failed: {e}")
         return ""
-    if cache and key and out:
+    if cache and out:
         try:
-            from . import storage
-            storage.cache_set(key, out)
+            from . import storage, langcache
+            if key:
+                storage.cache_set(key, out)
+            langcache.store(cache_prompt, out)
         except Exception:
             pass
     return out
