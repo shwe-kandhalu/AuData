@@ -1,5 +1,6 @@
 import { Fragment, useState } from "react";
 import { AlertCircle, Calculator, CheckCircle2, FileInput, Play, XCircle } from "lucide-react";
+import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { useStore } from "../lib/store";

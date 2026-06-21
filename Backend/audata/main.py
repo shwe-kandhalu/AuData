@@ -33,7 +33,6 @@ from pydantic import BaseModel
 from . import settings, ingest, browserbase_fetch, storage, fulltext, llm, dataset_audit
 from . import reference_integrity as refint
 from . import methods_claims as mc
-from . import imageforensicsagents as imgforensics
 
 app = FastAPI(title="AuData API", version="0.1.0")
 
@@ -46,6 +45,17 @@ app.add_middleware(
     CORSMiddleware, allow_origins=_origins, allow_credentials=True,
     allow_methods=["*"], allow_headers=["*"],
 )
+
+
+def _image_forensics_module():
+    try:
+        from . import imageforensicsagents
+        return imageforensicsagents
+    except ImportError as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Image forensics dependencies are not installed: {e}",
+        )
 
 
 @app.on_event("startup")
@@ -781,6 +791,7 @@ def image_forensics_check_paper_stream(req: ImageForensicsRequest):
     event_queue = queue.Queue()
     def _run():
         try:
+            imgforensics = _image_forensics_module()
             if not candidate_papers:
                 event_queue.put(("warning", {"message": "No candidate papers with PDFs found for comparison."}))
             output_root = Path.home() / ".audata" / "forensics" / req.paper_id
