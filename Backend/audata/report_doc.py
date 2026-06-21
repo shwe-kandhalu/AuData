@@ -106,6 +106,33 @@ _SECTIONS = [
 ]
 
 
+# ── docx styling helpers ───────────────────────────────────────────────────────
+
+# (fill hex, text RGB) per tone — light boxes with strong text, matching the UI.
+_TONE = {
+    "high":   ("F8D7DA", (0xC0, 0x21, 0x21)),
+    "medium": ("FFE8CC", (0xB4, 0x53, 0x09)),
+    "low":    ("D6EAF8", (0x0B, 0x72, 0x85)),
+    "info":   ("ECECEC", (0x57, 0x57, 0x57)),
+    "none":   ("D4EDDA", (0x1A, 0x7F, 0x37)),
+    "green":  ("D4EDDA", (0x1A, 0x7F, 0x37)),
+    "amber":  ("FFE8CC", (0xB4, 0x53, 0x09)),
+    "slate":  ("EEF1F5", (0x33, 0x33, 0x33)),
+    "blue":   ("E7F0FF", (0x1D, 0x4E, 0xD8)),
+}
+
+
+def _shade(cell, fill_hex: str) -> None:
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+    tcPr = cell._tc.get_or_add_tcPr()
+    shd = OxmlElement("w:shd")
+    shd.set(qn("w:val"), "clear")
+    shd.set(qn("w:color"), "auto")
+    shd.set(qn("w:fill"), fill_hex)
+    tcPr.append(shd)
+
+
 def build_docx(paper_id: str) -> bytes:
     from docx import Document
     from docx.shared import Pt, RGBColor
@@ -119,6 +146,7 @@ def build_docx(paper_id: str) -> bytes:
     for _, n in run_sections:
         for it in n.get("items", []):
             by_sev[it["severity"]] = by_sev.get(it["severity"], 0) + 1
+    clean = bool(run_sections) and total_flagged == 0
 
     doc = Document()
     doc.add_heading("AuData Audit Report", level=0)
@@ -126,45 +154,119 @@ def build_docx(paper_id: str) -> bytes:
     meta_line = " · ".join(str(x) for x in (paper.get("authors"), paper.get("year"), paper.get("container")) if x)
     if meta_line:
         doc.add_paragraph(meta_line)
-    doc.add_paragraph(f"Generated {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    gp = doc.add_paragraph()
+    gr = gp.add_run(f"Generated {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    gr.italic = True
+    gr.font.size = Pt(8)
+    gr.font.color.rgb = RGBColor(0x70, 0x70, 0x70)
 
-    p = doc.add_paragraph()
-    run = p.add_run(f"{total_flagged} flag{'' if total_flagged == 1 else 's'} across {len(run_sections)} detector{'' if len(run_sections) == 1 else 's'} run.")
-    run.bold = True
-    if by_sev:
-        doc.add_paragraph("Severity: " + ", ".join(f"{by_sev[k]} {k}" for k in ("high", "medium", "low", "info") if by_sev.get(k)))
+    def _box_run(cell, text, rgb, bold=True, size=None, italic=False):
+        para = cell.paragraphs[0] if not cell.paragraphs[0].runs and not cell.paragraphs[0].text else cell.add_paragraph()
+        r = para.add_run(text)
+        r.bold = bold
+        r.italic = italic
+        if size:
+            r.font.size = Pt(size)
+        if rgb:
+            r.font.color.rgb = RGBColor(*rgb)
+        return para
+
+    # ── verdict banner ──
+    if run_sections:
+        tone = "green" if clean else "amber"
+        bt = doc.add_table(rows=1, cols=1)
+        bc = bt.rows[0].cells[0]
+        _shade(bc, _TONE[tone][0])
+        sym = "✓ " if clean else "⚠ "
+        verdict = ("No integrity issues detected" if clean
+                   else f"{total_flagged} potential issue{'' if total_flagged == 1 else 's'} flagged for review")
+        _box_run(bc, sym + verdict, _TONE[tone][1], bold=True, size=12)
+        _box_run(bc, f"across {len(run_sections)} of {len(_SECTIONS)} detectors run", (0x57, 0x57, 0x57), bold=False, size=9)
+
+    # ── stat boxes ──
+    stat_defs = [("Total flags", total_flagged, "amber" if total_flagged else "green"),
+                 ("High", by_sev.get("high", 0), "high"),
+                 ("Medium", by_sev.get("medium", 0), "medium"),
+                 ("Low", by_sev.get("low", 0), "low"),
+                 ("Detectors", len(run_sections), "slate")]
+    st = doc.add_table(rows=1, cols=len(stat_defs))
+    for i, (label, val, tone) in enumerate(stat_defs):
+        c = st.rows[0].cells[i]
+        _shade(c, _TONE[tone][0])
+        val_txt = f"{val}/{len(_SECTIONS)}" if label == "Detectors" else str(val)
+        _box_run(c, val_txt, _TONE[tone][1], bold=True, size=20)
+        _box_run(c, label.upper(), (0x57, 0x57, 0x57), bold=False, size=8)
+
+    # ── detector status grid (3 columns) ──
+    doc.add_heading("Detectors", level=2)
+    cols = 3
+    import math
+    rows = max(1, math.ceil(len(sections) / cols))
+    grid = doc.add_table(rows=rows, cols=cols)
+    grid.style = "Table Grid"
+    for idx, (label, n) in enumerate(sections):
+        r, c = divmod(idx, cols)
+        cell = grid.cell(r, c)
+        ran = n.get("ran")
+        flagged = n.get("flagged", 0)
+        if not ran:
+            tone, sym, status = "slate", "○", "Not run"
+        elif flagged:
+            tone, sym, status = "amber", "⚠", f"{flagged} flag{'' if flagged == 1 else 's'}"
+        else:
+            tone, sym, status = "green", "✓", "Clean"
+        _shade(cell, _TONE[tone][0])
+        _box_run(cell, f"{sym} {label}", _TONE[tone][1], bold=True, size=10)
+        _box_run(cell, status, (0x57, 0x57, 0x57), bold=False, size=9)
+    # blank any unused trailing cells
+    for idx in range(len(sections), rows * cols):
+        r, c = divmod(idx, cols)
+        _shade(grid.cell(r, c), "FFFFFF")
+
+    # ── findings (only flagged detectors) ──
+    if any(n.get("flagged") for _, n in run_sections):
+        doc.add_heading("Findings", level=2)
+        for label, n in sections:
+            if not n.get("ran") or not n.get("flagged"):
+                continue
+            doc.add_heading(f"{label}  —  {n.get('flagged', 0)} flagged"
+                            + (f" of {n['total']}" if n.get("total") else ""), level=3)
+            items = sorted(n.get("items", []), key=lambda it: -_SEV_RANK.get(it["severity"], 0))
+            ft = doc.add_table(rows=len(items), cols=1)
+            ft.style = "Table Grid"
+            for i, it in enumerate(items):
+                cell = ft.rows[i].cells[0]
+                _shade(cell, _TONE.get(it["severity"], _TONE["info"])[0])
+                p0 = cell.paragraphs[0]
+                pill = p0.add_run(f"[{it['severity'].upper()}]  ")
+                pill.bold = True
+                pill.font.color.rgb = RGBColor(*_TONE.get(it["severity"], _TONE["info"])[1])
+                title = p0.add_run(it["title"])
+                title.bold = True
+                if it.get("detail"):
+                    dp = cell.add_paragraph()
+                    dr = dp.add_run(it["detail"])
+                    dr.font.size = Pt(9)
+                    dr.font.color.rgb = RGBColor(0x44, 0x44, 0x44)
+
+    # ── passed checks ──
+    passed = [label for label, n in sections if n.get("ran") and not n.get("flagged")]
+    if passed:
+        doc.add_heading("Passed checks", level=2)
+        pt = doc.add_table(rows=1, cols=1)
+        pc = pt.rows[0].cells[0]
+        _shade(pc, _TONE["green"][0])
+        _box_run(pc, "✓ " + "    ✓ ".join(passed), _TONE["green"][1], bold=True, size=10)
 
     if not run_sections:
         doc.add_paragraph("No detectors have been run for this paper yet.")
-
-    sev_color = {"high": RGBColor(0xC0, 0x21, 0x21), "medium": RGBColor(0xB4, 0x53, 0x09),
-                 "low": RGBColor(0x0B, 0x72, 0x85), "info": RGBColor(0x57, 0x57, 0x57), "none": RGBColor(0x1A, 0x7F, 0x37)}
-
-    for label, n in sections:
-        if not n.get("ran"):
-            continue
-        h = doc.add_heading(label, level=2)
-        cnt = doc.add_paragraph()
-        c = cnt.add_run(f"{n.get('flagged', 0)} flagged" + (f" of {n['total']}" if n.get("total") else ""))
-        c.italic = True
-        items = sorted(n.get("items", []), key=lambda it: -_SEV_RANK.get(it["severity"], 0))
-        if items:
-            for it in items:
-                para = doc.add_paragraph(style="List Bullet")
-                sr = para.add_run(f"[{it['severity'].upper()}] ")
-                sr.bold = True
-                sr.font.color.rgb = sev_color.get(it["severity"], RGBColor(0, 0, 0))
-                para.add_run(it["title"])
-                if it.get("detail"):
-                    para.add_run(f" - {it['detail']}").italic = True
-        else:
-            doc.add_paragraph(n.get("note") or f"No issues found ({n.get('total', 0)} checked).")
 
     doc.add_paragraph()
     foot = doc.add_paragraph()
     fr = foot.add_run("Generated by AuData. Flags are decision support for a human reviewer, not determinations of misconduct.")
     fr.italic = True
     fr.font.size = Pt(8)
+    fr.font.color.rgb = RGBColor(0x70, 0x70, 0x70)
 
     buf = io.BytesIO()
     doc.save(buf)
