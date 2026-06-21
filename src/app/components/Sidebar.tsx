@@ -167,11 +167,6 @@ export function Sidebar() {
               <SelectItem value="gemini-1.5-pro">Gemini 1.5 Pro</SelectItem>
             </SelectContent>
           </Select>
-          {ollamaRunning === false && (
-            <p className="text-xs text-amber-600 mt-2">
-              Ollama isn't reachable on localhost:11434. Start it with <code className="text-[10px]">ollama serve</code> or pull a model with <code className="text-[10px]">ollama pull &lt;name&gt;</code>.
-            </p>
-          )}
           {ollamaRunning && localModels.length === 0 && (
             <p className="text-xs text-amber-600 mt-2">
               Ollama is running but no models pulled. Try <code className="text-[10px]">ollama pull qwen2.5</code>.
