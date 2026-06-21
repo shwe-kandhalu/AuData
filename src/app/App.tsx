@@ -5,9 +5,11 @@ import { StoreProvider, useStore } from "./lib/store";
 import { AuthProvider } from "./lib/auth";
 import { UserMenu } from "./components/UserMenu";
 import {
-  DashboardPage, AuditsPage, RecomputePage, NumericalPage,
+  RecomputePage, NumericalPage,
   ImagingPage, ReliabilityPage, ReviewPage, ReportPage,
 } from "./pages/AuditPlaceholders";
+import { DashboardPage } from "./pages/DashboardPage";
+import { AuditsPage } from "./pages/AuditsPage";
 import { IngestPage } from "./pages/IngestPage";
 import { ReferenceIntegrityPage } from "./pages/ReferenceIntegrityPage";
 import { MethodsClaimsPage } from "./pages/MethodsClaimsPage";

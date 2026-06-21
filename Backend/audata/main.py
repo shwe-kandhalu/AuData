@@ -324,9 +324,27 @@ def session_data_get(session_id: str, key: str):
     return {"value": storage.session_get(session_id, key)}
 
 
+_AUDIT_LIGHT_FIELDS = ("id", "title", "authors", "year", "source", "container", "url",
+                       "doi", "has_pdf", "has_full_text", "char_count", "retracted",
+                       "references_detected", "tables_detected", "figures_detected")
+
+
 @app.get("/api/audits")
-def list_audits(limit: int = 50):
-    return {"papers": storage.list_papers(limit)}
+def list_audits(limit: int = 100):
+    """Lightweight list of ingested papers (no full text) for the Audits view."""
+    out = []
+    for p in storage.list_papers(limit):
+        out.append({k: p.get(k) for k in _AUDIT_LIGHT_FIELDS})
+    return {"papers": out}
+
+
+@app.get("/api/paper")
+def get_one_paper(id: str):
+    """Full paper record (with full text) — used to reopen an audit."""
+    p = storage.get_paper(id)
+    if not p:
+        raise HTTPException(status_code=404, detail="Paper not found.")
+    return {"paper": p}
 
 
 # ── sessions (SQLite, keyed by a per-browser owner id; no auth needed) ─────────

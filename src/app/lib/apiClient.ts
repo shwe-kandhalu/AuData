@@ -950,6 +950,30 @@ export function clientSessionId(): string {
   } catch { return "anon"; }
 }
 
+export type AuditListItem = {
+  id: string; title?: string; authors?: string; year?: number | null; source?: string;
+  container?: string; url?: string; doi?: string; has_pdf?: boolean; has_full_text?: boolean;
+  char_count?: number; retracted?: boolean; references_detected?: number;
+  tables_detected?: number; figures_detected?: number;
+};
+
+export const AuditsService = {
+  async list(signal?: AbortSignal): Promise<AuditListItem[]> {
+    try {
+      const r = await fetch(`${apiConfig.baseUrl}/audits?limit=200`, { signal });
+      if (!r.ok) return [];
+      return (await r.json()).papers || [];
+    } catch { return []; }
+  },
+  async getPaper(id: string, signal?: AbortSignal): Promise<PaperUnderAudit | null> {
+    try {
+      const r = await fetch(`${apiConfig.baseUrl}/paper?id=${encodeURIComponent(id)}`, { signal });
+      if (!r.ok) return null;
+      return (await r.json()).paper ?? null;
+    } catch { return null; }
+  },
+};
+
 export const IngestService = {
   async search(query: string, rows = 6, signal?: AbortSignal): Promise<IngestCandidate[]> {
     const r = await postJSON<{ candidates: IngestCandidate[] }>("/ingest/search", { query, rows }, signal);
