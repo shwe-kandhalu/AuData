@@ -36,7 +36,9 @@ def _get_redis():
         return None
     try:
         import redis
-        r = redis.from_url(settings.REDIS_URL, decode_responses=True, socket_connect_timeout=5)
+        # Bound the pool so we never approach the Redis Cloud connection cap.
+        r = redis.from_url(settings.REDIS_URL, decode_responses=True, socket_connect_timeout=5,
+                           socket_timeout=5, max_connections=6, health_check_interval=30)
         r.ping()
         _redis = r
         print("[audata.storage] Redis connected.")

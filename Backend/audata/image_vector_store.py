@@ -28,12 +28,23 @@ def get_model():
     return _model
 
 
+_redis_client = None
+
+
 def get_redis_client(ssl_override=None, username_override="__USE_ENV__"):
     # Prefer the single REDIS_URL used by the rest of the app (storage/cache),
-    # so one connection string drives both KV cache and vector search.
+    # so one connection string drives both KV cache and vector search. Reuse a
+    # single bounded-pool client across calls — creating a new client per figure
+    # leaks connections and exhausts the Redis Cloud connection cap.
+    global _redis_client
     url = os.getenv("REDIS_URL")
     if url:
-        return redis.from_url(url, decode_responses=False, socket_connect_timeout=3, socket_timeout=3)
+        if _redis_client is None:
+            _redis_client = redis.from_url(
+                url, decode_responses=False, socket_connect_timeout=3, socket_timeout=3,
+                max_connections=4, health_check_interval=30,
+            )
+        return _redis_client
 
     ssl_value = os.getenv("REDIS_SSL", "false").lower() in {"1", "true", "yes"}
     if ssl_override is not None:
