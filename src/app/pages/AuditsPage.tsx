@@ -8,7 +8,7 @@ import { Badge } from "../components/ui/badge";
 import { Input } from "../components/ui/input";
 import { FolderOpen, Upload, Loader2, RefreshCw, Ban, Check, Search, FileText } from "lucide-react";
 import { useStore } from "../lib/store";
-import { AuditsService, AuditStore, type AuditListItem } from "../lib/apiClient";
+import { AuditsService, type AuditListItem } from "../lib/apiClient";
 
 export function AuditsPage() {
   const s = useStore();
@@ -30,11 +30,11 @@ export function AuditsPage() {
       const paper = await AuditsService.getPaper(id);
       if (!paper) return;
       s.setPaperUnderAudit(paper);
-      // Load every stage's saved results (from Redis/SQLite) so each tab opens
-      // populated for this paper.
-      const audits = await AuditStore.getAll(id);
-      if (audits.references) s.setRefAudits({ ...s.refAudits, [id]: audits.references });
-      if (audits.methods) s.setMethodsAudits({ ...s.methodsAudits, [id]: audits.methods });
+      s.setStatcheckAudits({});
+      s.setNumericalAudits({});
+      s.setRefAudits({});
+      s.setMethodsAudits({});
+      s.setImageAudits({});
       s.setPage("dashboard");
     } finally { setOpening(null); }
   }
@@ -43,9 +43,15 @@ export function AuditsPage() {
     !filter.trim() || (p.title || "").toLowerCase().includes(filter.toLowerCase()) || (p.id || "").toLowerCase().includes(filter.toLowerCase()));
 
   function flags(id: string) {
+    const stat = s.statcheckAudits[id]?.summary?.flagged;
+    const num = s.numericalAudits[id]?.summary?.flagged;
     const ref = s.refAudits[id]?.summary?.flagged;
     const mc = s.methodsAudits[id]?.summary?.flagged;
+    const img = s.imageAudits[id]?.summary?.flagged;
     const out: string[] = [];
+    if (typeof stat === "number") out.push(`${stat} stat`);
+    if (typeof num === "number") out.push(`${num} num`);
+    if (typeof img === "number") out.push(`${img} image`);
     if (typeof ref === "number") out.push(`${ref} ref`);
     if (typeof mc === "number") out.push(`${mc} claim`);
     return out;

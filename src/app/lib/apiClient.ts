@@ -1126,6 +1126,7 @@ export type RefResult = {
 export type RefSummary = {
   total: number; flagged: number; retracted: number; unresolved: number;
   by_severity: Record<string, number>; by_issue: Record<string, number>;
+  note?: string;
 };
 export type RefMetrics = {
   self_citations: number; self_citation_rate: number;
@@ -1175,7 +1176,11 @@ export const ReferenceIntegrityService = {
         let parsed: any;
         try { parsed = JSON.parse(data); } catch { continue; }
         if (event === "result") { results.push(parsed); opts.onResult?.(parsed); }
-        else if (event === "done") { summary = parsed?.summary ?? null; metrics = parsed?.metrics ?? null; }
+        else if (event === "done") {
+          summary = parsed?.summary ?? null;
+          if (summary && parsed?.note) summary = { ...summary, note: parsed.note };
+          metrics = parsed?.metrics ?? null;
+        }
         else if (event === "error") throw new Error(parsed?.message || "reference-integrity error");
       }
     }

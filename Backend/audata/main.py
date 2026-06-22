@@ -83,6 +83,17 @@ app.add_middleware(
 )
 
 
+def _image_forensics_module():
+    try:
+        from . import imageforensicsagents
+        return imageforensicsagents
+    except ImportError as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Image forensics dependencies are not installed: {e}",
+        )
+
+
 @app.on_event("startup")
 def _startup():
     storage.init_db()
@@ -946,6 +957,7 @@ def image_forensics_check_paper_stream(req: ImageForensicsRequest):
     event_queue = queue.Queue()
     def _run():
         try:
+            imgforensics = _image_forensics_module()
             if not candidate_papers:
                 event_queue.put(("warning", {"message": "No candidate papers with PDFs found for comparison."}))
             output_root = Path.home() / ".audata" / "forensics" / req.paper_id
@@ -977,3 +989,50 @@ def image_forensics_check_paper_stream(req: ImageForensicsRequest):
             if event_type in ("done", "error"):
                 return
     return StreamingResponse(_gen(), media_type="text/event-stream")
+
+
+@app.get("/api/image-forensics/image")
+def serve_forensics_image(filepath: str):
+    """Serve forensics analysis image files (ELA, copy-move, etc)."""
+    try:
+        from pathlib import Path
+        p = Path(filepath)
+        if not p.exists():
+            raise HTTPException(status_code=404, detail="Image not found")
+        with open(p, "rb") as f:
+            data = f.read()
+        suffix = p.suffix.lower()
+        media = "image/png" if suffix == ".png" else "image/jpeg"
+        return Response(content=data, media_type=media)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Image not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── LLM proxy ────────────────────────────────────────────────────────────────
+
+class LLMChatRequest(BaseModel):
+    model: str = ""
+    messages: List[Dict[str, str]] = []
+    max_tokens: int = 4096
+
+@app.post("/api/llm/chat")
+def llm_chat(req: LLMChatRequest):
+    from langchain_core.messages import HumanMessage, SystemMessage
+    model_name = req.model or llm.default_model()
+    m = llm.get_model(model_name)
+    if m is None:
+        raise HTTPException(status_code=503, detail=f"Model '{model_name}' unavailable — check ANTHROPIC_API_KEY in Backend/.env")
+    lc_msgs = []
+    for msg in req.messages:
+        if msg.get("role") == "system":
+            lc_msgs.append(SystemMessage(content=msg["content"]))
+        elif msg.get("role") == "user":
+            lc_msgs.append(HumanMessage(content=msg["content"]))
+    try:
+        r = m.invoke(lc_msgs)
+        text = getattr(r, "content", "") or ""
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"content": [{"type": "text", "text": text}]}

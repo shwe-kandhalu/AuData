@@ -14,6 +14,7 @@ import { ImageForensicsPage } from "./pages/ImageForensicsPage";
 import { IngestService, AuditStore } from "./lib/apiClient";
 import { RecomputePage } from "./pages/RecomputePage";
 import { ReportPage } from "./pages/ReportPage";
+import { LandingPage } from "./pages/LandingPage";
 import { LayoutDashboard, Upload, Calculator, Hash, Image as ImageIcon, GitCompare, BookMarked, Gauge, ShieldCheck, FileText, Users } from "lucide-react";
 
 const PAGE_META: Record<string, { title: string; subtitle: string; icon: any }> = {
@@ -155,11 +156,16 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
 }
 
 export default function App() {
+  const [showLanding, setShowLanding] = useState(true);
   return (
     <ErrorBoundary>
       <AuthProvider>
         <StoreProvider>
-          <Shell />
+          {showLanding ? (
+            <LandingPage onEnter={() => setShowLanding(false)} />
+          ) : (
+            <Shell />
+          )}
         </StoreProvider>
       </AuthProvider>
     </ErrorBoundary>
